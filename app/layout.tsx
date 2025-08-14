@@ -10,6 +10,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   <a href="/">Forside</a>
   <a href="/login">Login</a>
   <a href="/welcome">Welcome</a>
+  <a href="/posts">Dine opslag</a>
+  <a href="/posts/new">Nyt opslag</a>
 </nav>
         </header>
         {children}
