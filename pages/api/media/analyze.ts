@@ -56,11 +56,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const height = meta.height || 0;
 
     const size = 96;
-    const { data: gray, info } = await sharp(buf)
+    const { data: grayBuf, info } = await sharp(buf)
       .resize({ width: size, height: size, fit: 'inside' })
       .grayscale()
       .raw()
       .toBuffer({ resolveWithObject: true });
+
+    // 🔧 VIGTIGT: Konverter Buffer -> Uint8Array for TypeScript
+    const gray = new Uint8Array(grayBuf.buffer, grayBuf.byteOffset, grayBuf.byteLength);
     const w = info.width; const h = info.height;
 
     const { mean, std } = meanStd(gray);
@@ -71,7 +74,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const contrast = std;         // ~0..128
 
     const verdicts: string[] = [];
-    const minShortSide = 1080;    // god minimum for IG‑kvalitet
+    const minShortSide = 1080;
     if (Math.min(width, height) < minShortSide) verdicts.push('resize');
     if (brightness < 90) verdicts.push('improve_brightness');
     if (contrast < 35) verdicts.push('improve_contrast');
@@ -79,7 +82,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!['1:1', '4:5', '9:16'].includes(aspect_label)) verdicts.push('crop_recommendation');
     const verdict = verdicts.length ? verdicts.join(',') : 'ok';
 
-    // Find user_email via post_id (hvis medsendt)
+    // Knyt user_email hvis vi kender post_id
     let user_email: string | null = null;
     if (post_id) {
       const { data: post } = await admin
@@ -102,7 +105,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const suggestions: string[] = [];
     if (verdict.includes('resize')) suggestions.push('Brug mindst 1080 px på den korteste led for skarp visning.');
     if (verdict.includes('improve_brightness')) suggestions.push('Øg lysstyrke lidt eller fotografer tættere ved vindue/bedre lys.');
-    if (verdict.includes('improve_contrast')) suggestions.push('Tilføj en anelse kontrast (undgå over‑filtering).');
+    if (verdict.includes('improve_contrast')) suggestions.push('Tilføj en anelse kontrast (undgå over-filtering).');
     if (verdict.includes('improve_sharpness')) suggestions.push('Hold kameraet mere stabilt eller brug et skarpere foto.');
     if (verdict.includes('crop_recommendation')) suggestions.push('Overvej beskæring til 1:1, 4:5 eller 9:16 afhængigt af kanal.');
     if (suggestions.length === 0) suggestions.push('Ser godt ud!');
