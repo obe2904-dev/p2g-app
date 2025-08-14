@@ -26,7 +26,36 @@ export default function NewPost() {
         'Authorization': 'Bearer ' + access_token,
       },
       body: JSON.stringify({ title, body, image_url: imageUrl })
+      <label>Upload billede (valgfri)</label>
+      <input type="file" accept="image/*" onChange={handleFile} />
     });
+
+    async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  setStatus('Uploader billede...');
+
+  const { data: userData } = await supabase.auth.getUser();
+  const uid = userData.user?.id;
+  if (!uid) { setStatus('Du er ikke logget ind. Gå til /login'); return; }
+
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+  const path = `${uid}/${Date.now()}.${ext}`;
+
+  const { error: upErr } = await supabase
+    .storage
+    .from('images')            // husk: bucket "images" skal være oprettet i Supabase Storage (Public = ON)
+    .upload(path, file, { cacheControl: '3600', upsert: false });
+
+  if (upErr) { setStatus('Upload-fejl: ' + upErr.message); return; }
+
+  const { data: pub } = supabase.storage.from('images').getPublicUrl(path);
+  const url = pub.publicUrl;
+
+  setImageUrl(url);  // udfylder automatisk dit Billede-URL-felt
+  setStatus('Billede uploadet ✔ Du kan nu klikke "Analyser billede" eller gemme opslaget.');
+}
 
     if (!resp.ok) {
       const text = await resp.text();
