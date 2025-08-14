@@ -4,23 +4,43 @@ import { supabase } from '@/lib/supabaseClient';
 
 export default function WelcomePage() {
   const [email, setEmail] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setEmail(data.user?.email ?? null);
-    });
-  }, []);
+    async function run() {
+      const { data } = await supabase.auth.getUser();
+      const user = data.user;
+      setEmail(user?.email ?? null);
+      if (!user) return;
 
-  async function logout() {
-    await supabase.auth.signOut();
-    window.location.href = '/login';
-  }
+      // Kald init‑API for at gemme branch i profiles
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) return;
+      try {
+        const resp = await fetch('/api/profile/init', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + token },
+        });
+        if (!resp.ok) {
+          const t = await resp.text();
+          setStatus('Profil kunne ikke oprettes: ' + t);
+        } else {
+          setStatus('Profil gemt.');
+        }
+      } catch (e: any) {
+        setStatus('Netværksfejl: ' + e.message);
+      }
+    }
+    run();
+  }, []);
 
   return (
     <main>
       <h2>Du er logget ind</h2>
       <p>{email ? `Som: ${email}` : 'Henter bruger...'}</p>
-      <p><a href="/">Til forsiden</a> · <button onClick={logout}>Log ud</button></p>
+      {status && <p>{status}</p>}
+      <p><a href="/">Til forsiden</a></p>
     </main>
   );
 }
