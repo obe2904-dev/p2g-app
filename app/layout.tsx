@@ -1,13 +1,18 @@
-import { cookies } from 'next/headers';
+import './globals.css';
+import type { ReactNode } from 'react';
+import Header from '@/components/Header';
 
-export const metadata = { title: 'Post2Grow', description: 'MVP' };
-
-function label(industry: string | undefined) {
-  switch (industry) {
-    case 'frisor': return 'Frisør';
-    case 'fysio': return 'Fysio';
-    default: return 'Café';
-  }
+export default function RootLayout({ children }: { children: ReactNode }) {
+  return (
+    <html lang="da">
+      <body>
+        <Header />
+        <main style={{ maxWidth: 1000, margin: '0 auto', padding: '16px' }}>
+          {children}
+        </main>
+      </body>
+    </html>
+  );
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
