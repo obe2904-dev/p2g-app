@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import type React from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import RequireAuth from '@/components/RequireAuth';
 
 type Analysis = {
   width: number; height: number; aspect_label: string;
@@ -155,6 +156,7 @@ export default function NewPost() {
   }
 
   return (
+    <RequireAuth>
     <main>
       <h2>Nyt opslag</h2>
 
@@ -237,5 +239,6 @@ export default function NewPost() {
 
       {status && <p style={{ marginTop: 8 }}>{status}</p>}
     </main>
+      <RequireAuth>
   );
 }
