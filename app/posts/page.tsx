@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import RequireAuth from '@/components/RequireAuth';
 
 type Row = { id: number; title: string | null; created_at: string; status: string | null };
 
@@ -65,6 +66,7 @@ export default function PostsPage() {
 
   return (
     <main>
+      <RequireAuth>
       <h2>Dine opslag</h2>
 
       {plan && (
@@ -104,5 +106,6 @@ export default function PostsPage() {
         </table>
       )}
     </main>
+   <RequireAuth>
   );
 }
