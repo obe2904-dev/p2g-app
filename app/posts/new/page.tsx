@@ -1,3 +1,4 @@
+// app/posts/new/page.tsx
 'use client';
 import { useState } from 'react';
 import type React from 'react';
@@ -43,14 +44,30 @@ export default function NewPost() {
     if (!imageUrl) { setStatus('Indsæt eller upload et billede først.'); return; }
     setAnalyzing(true); setAnalysis(null); setStatus(null);
     try {
+      // Send token med for at kunne tælle AI-forbrug pr. bruger/plan
+      const { data: s } = await supabase.auth.getSession();
+      const token = s.session?.access_token;
+
       const resp = await fetch('/api/media/analyze', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+        },
         body: JSON.stringify({ image_url: imageUrl })
       });
-      if (!resp.ok) { const t = await resp.text(); setStatus('Analyse-fejl: ' + t); }
-      else { const data = await resp.json(); setAnalysis(data); }
-    } catch (e:any) { setStatus('Analyse-fejl: ' + e.message); }
-    finally { setAnalyzing(false); }
+      if (!resp.ok) {
+        const t = await resp.text();
+        setStatus('Analyse-fejl: ' + t);
+      } else {
+        const data = await resp.json();
+        setAnalysis(data);
+      }
+    } catch (e: any) {
+      setStatus('Analyse-fejl: ' + e.message);
+    } finally {
+      setAnalyzing(false);
+    }
   }
 
   async function submit(e: React.FormEvent) {
@@ -60,11 +77,20 @@ export default function NewPost() {
     const access_token = sessionData.session?.access_token;
     if (!access_token) { setStatus('Du er ikke logget ind. Gå til /login'); return; }
     const resp = await fetch('/api/posts/create', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + access_token },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + access_token },
       body: JSON.stringify({ title, body, image_url: imageUrl })
     });
-    if (!resp.ok) { const text = await resp.text(); setStatus('Fejl: ' + text); }
-    else { setStatus('Gemt!'); setTitle(''); setBody(''); setImageUrl(''); setAnalysis(null); }
+    if (!resp.ok) {
+      const text = await resp.text();
+      setStatus('Fejl: ' + text);
+    } else {
+      setStatus('Gemt!');
+      setTitle('');
+      setBody('');
+      setImageUrl('');
+      setAnalysis(null);
+    }
   }
 
   function copyToClipboard() {
@@ -77,15 +103,18 @@ export default function NewPost() {
       <h2>Nyt opslag</h2>
       <form onSubmit={submit} style={{ display: 'grid', gap: 8, maxWidth: 520 }}>
         <label>Titel (valgfri)</label>
-        <input value={title} onChange={e=>setTitle(e.target.value)} />
+        <input value={title} onChange={e => setTitle(e.target.value)} />
+
         <label>Tekst (påkrævet)</label>
-        <textarea required rows={5} value={body} onChange={e=>setBody(e.target.value)} />
+        <textarea required rows={5} value={body} onChange={e => setBody(e.target.value)} />
+
         <label>Billede-URL (valgfri)</label>
-        <input value={imageUrl} onChange={e=>setImageUrl(e.target.value)} placeholder="https://..." />
+        <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://..." />
+
         <label>Upload billede (valgfri)</label>
         <input type="file" accept="image/*" onChange={handleFile} />
 
-        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button type="button" onClick={analyzePhoto} disabled={!imageUrl || analyzing}>
             {analyzing ? 'Analyserer…' : 'Analyser billede'}
           </button>
@@ -98,9 +127,9 @@ export default function NewPost() {
 
       {analysis && (
         <section style={{ marginTop: 16, padding: 12, border: '1px solid #ddd', borderRadius: 8 }}>
-          <h3>Foto‑feedback</h3>
+          <h3>Foto-feedback</h3>
           <p><strong>Størrelse:</strong> {analysis.width}×{analysis.height} ({analysis.aspect_label})</p>
-          <p><strong>Lys (0‑255):</strong> {analysis.brightness} — <strong>Kontrast:</strong> {analysis.contrast} — <strong>Skarphed:</strong> {analysis.sharpness}</p>
+          <p><strong>Lys (0-255):</strong> {analysis.brightness} — <strong>Kontrast:</strong> {analysis.contrast} — <strong>Skarphed:</strong> {analysis.sharpness}</p>
           <p><strong>Vurdering:</strong> {analysis.verdict}</p>
           <ul>
             {analysis.suggestions.map((s, i) => <li key={i}>{s}</li>)}
