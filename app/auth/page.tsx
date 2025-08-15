@@ -11,9 +11,9 @@ export default function AuthPage() {
   const [email, setEmail] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
 
-  // Læs ?mode=login|signup fra URL’en
+  // Læs ?mode=login|signup fra URL’en (brug optional chaining for at tilfredsstille TS)
   useEffect(() => {
-    const m = sp.get('mode');
+    const m = sp?.get?.('mode'); // ← vigtig ændring
     if (m === 'login' || m === 'signup') setMode(m);
   }, [sp]);
 
