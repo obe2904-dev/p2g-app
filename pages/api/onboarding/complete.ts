@@ -87,29 +87,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // Metadata til samtykke-log
+        // Metadata til samtykke-log
     const consent_ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
       || (req.socket?.remoteAddress ?? null);
     const consent_user_agent = req.headers['user-agent'] || null;
 
-    // 3) Opdater profil (navn, telefon, org + consent)
-    const { error: updErr } = await admin
-      .from('profiles')
-      .update({
-        full_name,
-        phone: phone || null,
-        default_org_id: orgId,
-        tos_accept_version: tos_version,
-        tos_accept_at: new Date().toISOString(),
-        dpa_accept_version: dpa_version,
-        dpa_accept_at: new Date().toISOString(),
-        consent_ip,
-        consent_user_agent
-      })
-      .eq('user_id', userId);
+    // 3) Opret/Opdatér profil via UPSERT (så den findes for nye brugere)
+    const profilePayload = {
+      user_id: userId,                // vigitigt for onConflict
+      full_name,
+      phone: phone || null,
+      default_org_id: orgId,
+      tos_accept_version: tos_version,
+      tos_accept_at: new Date().toISOString(),
+      dpa_accept_version: dpa_version,
+      dpa_accept_at: new Date().toISOString(),
+      consent_ip,
+      consent_user_agent
+    };
 
-    if (updErr) return res.status(500).send(updErr.message);
+    const { error: upsertErr } = await admin
+      .from('profiles')
+      .upsert(profilePayload, { onConflict: 'user_id' });
+
+    if (upsertErr) return res.status(500).send(upsertErr.message);
 
     return res.status(200).json({ ok: true, org_id: orgId, alreadyCompleted: !!alreadyDone });
+
   } catch (e: any) {
     return res.status(500).send(e.message || 'Server error');
   }
