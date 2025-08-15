@@ -320,13 +320,14 @@ export async function POST(req: NextRequest) {
       source_domain,
       previews,
       proposal: {
-        summary_text,
-        keywords,
-        hero_image_url: hero || null,
-        source_urls,
-        language: daish ? 'da' : 'en'
-      }
-    });
+      summary_text,
+      keywords,
+      hero_image_url: hero || null,
+    // 🔧 FIX HER:
+    source_urls: sourceUrls,
+    language: daish ? 'da' : 'en'
+  }
+});
   } catch (e:any) {
     return NextResponse.json({ ok:false, error: e.message || 'Server error' }, { status: 500 });
   }
