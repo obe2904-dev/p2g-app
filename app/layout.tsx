@@ -24,13 +24,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </div>
          <nav style={{ display: 'flex', gap: 12 }}>
           <a href="/">Forside</a>
-          <a href="/signup">Signup</a>
-          <a href="/login">Login</a>
-          <a href="/welcome">Welcome</a>
+          <a href="/signup">Tilmeld</a>
+          <a href="/login">Log ind</a>
+          <a href="/welcome">Velkommen</a>
           <a href="/posts">Dine opslag</a>
           <a href="/posts/new">Nyt opslag</a>
-          <a href="/performance">Performance</a>
-          <a href="/pricing">Pricing</a>
+          <a href="/performance">Performance</a> {/* eller “Resultater” hvis du vil */}
+          <a href="/pricing">Priser</a> {/* <-- ændret fra "Pricing" */}
         </nav>
 
         </header>
