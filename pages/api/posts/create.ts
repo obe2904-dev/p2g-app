@@ -25,7 +25,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Opret række
     const { error } = await admin
       .from('posts_app')
-      .insert({ title: title ?? null, body, image_url: image_url ?? null, user_email: email });
+      .insert([{ title, body, image_url: image_url ?? null, user_email: email, status: req.body?.status ?? 'draft', updated_at: new Date().toISOString() }])
 
     if (error) return res.status(500).send(error.message);
 
