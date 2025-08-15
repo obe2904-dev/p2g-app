@@ -65,8 +65,8 @@ export default function PostsPage() {
   }
 
   return (
+    <RequireAuth>
     <main>
-      <RequireAuth>
       <h2>Dine opslag</h2>
 
       {plan && (
