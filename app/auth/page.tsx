@@ -13,9 +13,9 @@ export default function AuthPage() {
 
   // Læs ?mode=login|signup fra URL’en (brug optional chaining for at tilfredsstille TS)
   useEffect(() => {
-    const m = sp?.get?.('mode'); // ← vigtig ændring
-    if (m === 'login' || m === 'signup') setMode(m);
-  }, [sp]);
+  const m = new URLSearchParams(window.location.search).get('mode');
+  if (m === 'login' || m === 'signup') setMode(m);
+  }, []);
 
   async function withGoogle() {
     setMsg(null);
