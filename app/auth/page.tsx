@@ -1,21 +1,24 @@
 // app/auth/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
-export default function AuthPage() {
+// Tving siden til at være dynamisk (god praksis for auth-sider)
+export const dynamic = 'force-dynamic';
+
+function AuthInner() {
   const sp = useSearchParams();
   const [mode, setMode] = useState<'signup' | 'login'>('signup');
   const [email, setEmail] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
 
-  // Læs ?mode=login|signup fra URL’en (brug optional chaining for at tilfredsstille TS)
+  // Læs ?mode=login|signup fra URL’en
   useEffect(() => {
-  const m = new URLSearchParams(window.location.search).get('mode');
-  if (m === 'login' || m === 'signup') setMode(m);
-  }, []);
+    const m = sp?.get('mode');
+    if (m === 'login' || m === 'signup') setMode(m);
+  }, [sp]);
 
   async function withGoogle() {
     setMsg(null);
@@ -74,5 +77,13 @@ export default function AuthPage() {
         {msg && <p>{msg}</p>}
       </div>
     </main>
+  );
+}
+
+export default function AuthPage() {
+  return (
+    <Suspense fallback={<main style={{ maxWidth: 420, margin: '24px auto' }}><p>Indlæser…</p></main>}>
+      <AuthInner />
+    </Suspense>
   );
 }
