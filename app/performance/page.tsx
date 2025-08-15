@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import RequireAuth from '@/components/RequireAuth';
 
 type Row = { channel: string; metric: string; value: number; observed_at: string };
 
@@ -40,6 +41,7 @@ export default function PerformancePage() {
   const keys = Object.keys(totals).sort();
 
   return (
+    <RequireAuth>
     <main>
       <h2>Performance (sidste 30 dage)</h2>
       {loading && <p>Henter...</p>}
@@ -69,5 +71,6 @@ export default function PerformancePage() {
         </table>
       )}
     </main>
+      <RequireAuth>
   );
 }
