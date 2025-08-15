@@ -29,7 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <a href="/welcome">Velkommen</a>
           <a href="/posts">Dine opslag</a>
           <a href="/posts/new">Nyt opslag</a>
-          <a href="/performance">Performance</a> {/* eller “Resultater” hvis du vil */}
+          <a href="/performance">Effekt</a> {/* eller “Resultater” hvis du vil */}
           <a href="/pricing">Priser</a> {/* <-- ændret fra "Pricing" */}
         </nav>
 
