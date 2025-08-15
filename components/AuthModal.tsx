@@ -53,12 +53,13 @@ export default function AuthModal({
 
           <small style={{ color:'#555' }}>
             {mode === 'signup' ? 'Har du allerede en konto?' : 'Ny hos os?'}{' '}
-            <button onClick={() => { /* toggle mode */ }} style={{ textDecoration:'underline' }}
-              onMouseDown={(e)=>e.preventDefault()}
-              onClickCapture={() => { /* toggle without closing */ }}>
-              {/* hack: onClick defined twice is not valid, so do it properly: */}
-            </button>
-          </small>
+            <button
+            onClick={() => { /* toggle mode without closing */ (mode === 'signup') ? (window.dispatchEvent(new CustomEvent('open-auth', { detail:{ mode:'login' } })), onClose()) : (window.dispatchEvent(new CustomEvent('open-auth', { detail:{ mode:'signup' } })), onClose()); }}
+            style={{ textDecoration:'underline' }}
+            >
+          {mode === 'signup' ? 'Log ind' : 'Opret gratis konto'}
+          </button>
+      </small>
         </div>
 
         <div style={{ marginTop:8 }}>
