@@ -1,18 +1,13 @@
 // app/posts/new/page.tsx
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type React from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 type Analysis = {
-  width: number;
-  height: number;
-  aspect_label: string;
-  brightness: number;
-  contrast: number;
-  sharpness: number;
-  verdict: string;
-  suggestions: string[];
+  width: number; height: number; aspect_label: string;
+  brightness: number; contrast: number; sharpness: number;
+  verdict: string; suggestions: string[];
 } | null;
 
 export default function NewPost() {
@@ -22,6 +17,38 @@ export default function NewPost() {
   const [status, setStatus] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<Analysis>(null);
   const [analyzing, setAnalyzing] = useState(false);
+
+  // NYT: AI-tekst
+  const [tone, setTone] = useState('neutral');
+  const [aiTextLoading, setAiTextLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [textUsage, setTextUsage] = useState<{ used: number; limit: number | null } | null>(null);
+
+  useEffect(() => { loadTextUsage(); }, []);
+
+  async function loadTextUsage() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    // Count denne måneds tekst-forbrug
+    const start = new Date(); start.setDate(1); start.setHours(0,0,0,0);
+    const { count } = await supabase
+      .from('ai_usage')
+      .select('id', { count: 'exact', head: true })
+      .eq('kind', 'text')
+      .gte('used_at', start.toISOString());
+
+    // Slå plan + limit op
+    const { data: prof } = await supabase.from('profiles').select('plan_id').eq('user_id', user.id).single();
+    const plan = prof?.plan_id || 'basic';
+    const { data: lim } = await supabase
+      .from('plan_features')
+      .select('limit_value')
+      .eq('plan_id', plan)
+      .eq('feature_key', 'ai_text_monthly_limit')
+      .maybeSingle();
+
+    setTextUsage({ used: count ?? 0, limit: (lim?.limit_value ?? null) as number | null });
+  }
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -44,7 +71,6 @@ export default function NewPost() {
     if (!imageUrl) { setStatus('Indsæt eller upload et billede først.'); return; }
     setAnalyzing(true); setAnalysis(null); setStatus(null);
     try {
-      // Send token med for at kunne tælle AI-forbrug pr. bruger/plan
       const { data: s } = await supabase.auth.getSession();
       const token = s.session?.access_token;
 
@@ -56,17 +82,46 @@ export default function NewPost() {
         },
         body: JSON.stringify({ image_url: imageUrl })
       });
-      if (!resp.ok) {
-        const t = await resp.text();
-        setStatus('Analyse-fejl: ' + t);
-      } else {
-        const data = await resp.json();
-        setAnalysis(data);
+      if (!resp.ok) { const t = await resp.text(); setStatus('Analyse-fejl: ' + t); }
+      else { const data = await resp.json(); setAnalysis(data); }
+    } catch (e:any) { setStatus('Analyse-fejl: ' + e.message); }
+    finally { setAnalyzing(false); }
+  }
+
+  async function getAiSuggestions() {
+    if (!body && !title) { setStatus('Skriv lidt tekst eller et emne i Titel/Brødtekst først.'); return; }
+    setAiTextLoading(true); setStatus(null);
+    try {
+      const { data: s } = await supabase.auth.getSession();
+      const token = s.session?.access_token;
+      const resp = await fetch('/api/ai/suggest', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+        },
+        body: JSON.stringify({
+          topic: title || undefined,
+          tone,
+          post_body: body || undefined
+        })
+      });
+      if (resp.status === 402) {
+        setStatus(await resp.text()); // “kvote opbrugt”
+        return;
       }
-    } catch (e: any) {
-      setStatus('Analyse-fejl: ' + e.message);
+      if (!resp.ok) {
+        setStatus('AI-fejl: ' + (await resp.text()));
+        return;
+      }
+      const data = await resp.json();
+      setSuggestions(Array.isArray(data.suggestions) ? data.suggestions : []);
+      // Opdater tælleren (vi logger 1 brug pr. kald)
+      await loadTextUsage();
+    } catch (e:any) {
+      setStatus('AI-fejl: ' + e.message);
     } finally {
-      setAnalyzing(false);
+      setAiTextLoading(false);
     }
   }
 
@@ -90,6 +145,7 @@ export default function NewPost() {
       setBody('');
       setImageUrl('');
       setAnalysis(null);
+      setSuggestions([]);
     }
   }
 
@@ -101,20 +157,62 @@ export default function NewPost() {
   return (
     <main>
       <h2>Nyt opslag</h2>
+
+      {/* Tæller for AI-tekst dette måned */}
+      {textUsage && (
+        <p style={{ margin: '4px 0 12px' }}>
+          AI tekstforslag denne måned: <strong>{textUsage.used}</strong>
+          {' '} / {' '}
+          <strong>{textUsage.limit === null ? '∞' : textUsage.limit}</strong>
+        </p>
+      )}
+
       <form onSubmit={submit} style={{ display: 'grid', gap: 8, maxWidth: 520 }}>
         <label>Titel (valgfri)</label>
-        <input value={title} onChange={e => setTitle(e.target.value)} />
+        <input value={title} onChange={e=>setTitle(e.target.value)} />
 
         <label>Tekst (påkrævet)</label>
-        <textarea required rows={5} value={body} onChange={e => setBody(e.target.value)} />
+        <textarea required rows={5} value={body} onChange={e=>setBody(e.target.value)} />
+
+        {/* AI-tekst: tone + knap */}
+        <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+          <label style={{ marginRight: 4 }}>Tone:</label>
+          <select value={tone} onChange={e=>setTone(e.target.value)}>
+            <option value="neutral">Neutral/venlig</option>
+            <option value="salg">Mere salg</option>
+            <option value="informativ">Informativ</option>
+            <option value="hyggelig">Hyggelig</option>
+          </select>
+          <button type="button" onClick={getAiSuggestions} disabled={aiTextLoading}>
+            {aiTextLoading ? 'Foreslår…' : 'Få tekstforslag (AI)'}
+          </button>
+        </div>
+
+        {/* Forslag-liste */}
+        {suggestions.length > 0 && (
+          <section style={{ border:'1px solid #ddd', borderRadius:8, padding:12 }}>
+            <strong>Forslag:</strong>
+            <ol>
+              {suggestions.map((s, i) => (
+                <li key={i} style={{ marginTop:8 }}>
+                  <div style={{ whiteSpace:'pre-wrap' }}>{s}</div>
+                  <div style={{ display:'flex', gap:8, marginTop:4 }}>
+                    <button type="button" onClick={() => setBody(s)}>Brug i tekstfelt</button>
+                    <button type="button" onClick={() => navigator.clipboard.writeText(s)}>Kopier</button>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
 
         <label>Billede-URL (valgfri)</label>
-        <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://..." />
+        <input value={imageUrl} onChange={e=>setImageUrl(e.target.value)} placeholder="https://..." />
 
         <label>Upload billede (valgfri)</label>
         <input type="file" accept="image/*" onChange={handleFile} />
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
           <button type="button" onClick={analyzePhoto} disabled={!imageUrl || analyzing}>
             {analyzing ? 'Analyserer…' : 'Analyser billede'}
           </button>
