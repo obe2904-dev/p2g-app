@@ -11,6 +11,11 @@ type Analysis = {
   verdict: string; suggestions: string[];
 } | null;
 
+type UsageState = {
+  text: { used: number; limit: number | null };
+  photo: { used: number; limit: number | null };
+} | null;
+
 export default function NewPost() {
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -25,33 +30,66 @@ export default function NewPost() {
   const [tone, setTone] = useState('neutral');
   const [aiTextLoading, setAiTextLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [textUsage, setTextUsage] = useState<{ used: number; limit: number | null } | null>(null);
 
-  useEffect(() => { loadTextUsage(); }, []);
+  // AI-tællere
+  const [usage, setUsage] = useState<UsageState>(null);
 
-  async function loadTextUsage() {
+  useEffect(() => { loadUsage(); }, []);
+
+  async function loadUsage() {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setTextUsage(null); return; }
+    if (!user) { setUsage(null); return; }
 
-    // Count denne måneds AI-tekst
+    // Denne måneds start
     const start = new Date(); start.setDate(1); start.setHours(0,0,0,0);
-    const { count } = await supabase
+
+    // Count TEXT
+    const { count: textCount } = await supabase
       .from('ai_usage')
       .select('id', { count: 'exact', head: true })
       .eq('kind', 'text')
       .gte('used_at', start.toISOString());
 
-    // Slå plan-limit op
-    const { data: prof } = await supabase.from('profiles').select('plan_id').eq('user_id', user.id).single();
-    const plan = prof?.plan_id || 'basic';
-    const { data: lim } = await supabase
-      .from('plan_features')
-      .select('limit_value')
-      .eq('plan_id', plan)
-      .eq('feature_key', 'ai_text_monthly_limit')
+    // Count PHOTO
+    const { count: photoCount } = await supabase
+      .from('ai_usage')
+      .select('id', { count: 'exact', head: true })
+      .eq('kind', 'photo')
+      .gte('used_at', start.toISOString());
+
+    // Find plan
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('plan_id')
+      .eq('user_id', user.id)
       .maybeSingle();
 
-    setTextUsage({ used: count ?? 0, limit: (lim?.limit_value ?? null) as number | null });
+    const plan = prof?.plan_id || 'basic';
+
+    // Limits fra plan_features
+    const { data: features } = await supabase
+      .from('plan_features')
+      .select('feature_key, limit_value')
+      .in('feature_key', ['ai_text_monthly_limit', 'ai_photo_monthly_limit'])
+      .eq('plan_id', plan);
+
+    const limits = Object.fromEntries((features ?? []).map(f => [f.feature_key, f.limit_value])) as Record<string, number>;
+
+    setUsage({
+      text:  { used: textCount ?? 0,  limit: Number.isFinite(limits['ai_text_monthly_limit'])  ? limits['ai_text_monthly_limit']  : null },
+      photo: { used: photoCount ?? 0, limit: Number.isFinite(limits['ai_photo_monthly_limit']) ? limits['ai_photo_monthly_limit'] : null },
+    });
+  }
+
+  async function addUsage(kind: 'text' | 'photo', postId?: number) {
+    const { data: s } = await supabase.auth.getSession();
+    const token = s.session?.access_token;
+    if (!token) return;
+    await fetch('/api/ai/usage/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ kind, post_id: postId })
+    });
   }
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -97,6 +135,9 @@ export default function NewPost() {
         setStatus('Analyse-fejl: ' + (await resp.text()));
       } else {
         setAnalysis(await resp.json());
+        // Log en photo-usage ved succes
+        await addUsage('photo');
+        await loadUsage();
       }
     } catch (e: any) {
       setStatus('Analyse-fejl: ' + e.message);
@@ -137,7 +178,7 @@ export default function NewPost() {
 
       const data = await resp.json();
       setSuggestions(Array.isArray(data.suggestions) ? data.suggestions : []);
-      await loadTextUsage(); // opdater tæller efter brug
+      await loadUsage(); // opdater tæller efter brug (suggest API registrerer selv 'text')
     } catch (e: any) {
       setStatus('AI-fejl: ' + e.message);
     } finally {
@@ -179,13 +220,16 @@ export default function NewPost() {
       <main>
         <h2>Nyt opslag</h2>
 
-        {/* AI-tekst tæller */}
-        {textUsage && (
-          <p style={{ margin: '4px 0 12px' }}>
-            AI tekstforslag denne måned: <strong>{textUsage.used}</strong>
-            {' '} / {' '}
-            <strong>{textUsage.limit === null ? '∞' : textUsage.limit}</strong>
-          </p>
+        {/* AI-tællere */}
+        {usage && (
+          <div style={{ display:'grid', gap:4, margin:'4px 0 12px' }}>
+            <p style={{ margin: 0 }}>
+              AI tekstforslag denne måned: <strong>{usage.text.used}</strong> / <strong>{usage.text.limit === null ? '∞' : usage.text.limit}</strong>
+            </p>
+            <p style={{ margin: 0 }}>
+              AI billedanalyse denne måned: <strong>{usage.photo.used}</strong> / <strong>{usage.photo.limit === null ? '∞' : usage.photo.limit}</strong>
+            </p>
+          </div>
         )}
 
         <form onSubmit={submit} style={{ display: 'grid', gap: 8, maxWidth: 520 }}>
