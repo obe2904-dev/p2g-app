@@ -66,46 +66,46 @@ export default function PostsPage() {
 
   return (
     <RequireAuth>
-    <main>
-      <h2>Dine opslag</h2>
+      <main>
+        <h2>Dine opslag</h2>
 
-      {plan && (
-        <p style={{ marginTop: 4 }}>
-          Din pakke: <strong>{planLabel(plan)}</strong> · <a href="/pricing">Opgradér</a>
-        </p>
-      )}
+        {plan && (
+          <p style={{ marginTop: 4 }}>
+            Din pakke: <strong>{planLabel(plan)}</strong> · <a href="/pricing">Opgradér</a>
+          </p>
+        )}
 
-      {error && <p>Fejl: {error}</p>}
-      {info && <p>{info}</p>}
+        {error && <p>Fejl: {error}</p>}
+        {info && <p>{info}</p>}
 
-      {rows.length === 0 ? (
-        <p>Ingen opslag endnu. <a href="/posts/new">Opret et nyt</a>.</p>
-      ) : (
-        <table style={{ borderCollapse: 'collapse', minWidth: 520 }}>
-          <thead>
-            <tr>
-              <th style={{ textAlign: 'left', padding: 6, borderBottom: '1px solid #ddd' }}>Titel</th>
-              <th style={{ textAlign: 'left', padding: 6, borderBottom: '1px solid #ddd' }}>Status</th>
-              <th style={{ textAlign: 'left', padding: 6, borderBottom: '1px solid #ddd' }}>Oprettet</th>
-              <th style={{ textAlign: 'left', padding: 6, borderBottom: '1px solid #ddd' }}>Handling</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(r => (
-              <tr key={r.id}>
-                <td style={{ padding: 6 }}>{r.title || '(uden titel)'}</td>
-                <td style={{ padding: 6 }}>{statusLabel(r.status)}</td>
-                <td style={{ padding: 6 }}>{new Date(r.created_at).toLocaleString()}</td>
-                <td style={{ padding: 6, display: 'flex', gap: 8 }}>
-                  <Link href={`/posts/${r.id}/edit`}>Redigér</Link>
-                  <button onClick={() => remove(r.id)} style={{ color: '#b00' }}>Slet</button>
-                </td>
+        {rows.length === 0 ? (
+          <p>Ingen opslag endnu. <a href="/posts/new">Opret et nyt</a>.</p>
+        ) : (
+          <table style={{ borderCollapse: 'collapse', minWidth: 520 }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', padding: 6, borderBottom: '1px solid #ddd' }}>Titel</th>
+                <th style={{ textAlign: 'left', padding: 6, borderBottom: '1px solid #ddd' }}>Status</th>
+                <th style={{ textAlign: 'left', padding: 6, borderBottom: '1px solid #ddd' }}>Oprettet</th>
+                <th style={{ textAlign: 'left', padding: 6, borderBottom: '1px solid #ddd' }}>Handling</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </main>
-   <RequireAuth>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.id}>
+                  <td style={{ padding: 6 }}>{r.title || '(uden titel)'}</td>
+                  <td style={{ padding: 6 }}>{statusLabel(r.status)}</td>
+                  <td style={{ padding: 6 }}>{new Date(r.created_at).toLocaleString()}</td>
+                  <td style={{ padding: 6, display: 'flex', gap: 8 }}>
+                    <Link href={`/posts/${r.id}/edit`}>Redigér</Link>
+                    <button onClick={() => remove(r.id)} style={{ color: '#b00' }}>Slet</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </main>
+    </RequireAuth>
   );
 }
