@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
+import RequireAuth from '@/components/RequireAuth';
 
 type Post = { id: number; title: string | null; body: string | null; image_url: string | null; status: string | null };
 
@@ -116,6 +117,7 @@ export default function EditPost({ params }: { params: { id: string } }) {
   if (!post) return <main><p>Henter...</p></main>;
 
   return (
+    <RequireAuth>
     <main style={{ maxWidth: 640 }}>
       <h2>Redigér opslag #{post.id}</h2>
 
@@ -157,5 +159,6 @@ export default function EditPost({ params }: { params: { id: string } }) {
 
       {statusMsg && <p style={{ marginTop: 8 }}>{statusMsg}</p>}
     </main>
+      <RequireAuth>
   );
 }
