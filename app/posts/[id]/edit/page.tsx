@@ -80,14 +80,26 @@ export default function EditPost({ params }: { params: { id: string } }) {
   }
 
   async function analyzePhoto() {
-    if (!post?.image_url) { setStatusMsg('Indsæt et billede først.'); return; }
-    setStatusMsg(null); setAnalysis(null);
-    try {
-      const resp = await fetch('/api/media/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image_url: post.image_url, post_id: post.id }) });
-      if (!resp.ok) setStatusMsg('Analyse-fejl: ' + (await resp.text()));
-      else setAnalysis(await resp.json());
-    } catch (e:any) { setStatusMsg('Analyse-fejl: ' + e.message); }
-  }
+  if (!imageUrl) { setStatus('Indsæt eller upload et billede først.'); return; }
+  setAnalyzing(true); setAnalysis(null); setStatus(null);
+  try {
+    const { data: s } = await supabase.auth.getSession();
+    const token = s.session?.access_token;
+
+    const resp = await fetch('/api/media/analyze', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+      },
+      body: JSON.stringify({ image_url: imageUrl })
+    });
+
+    if (!resp.ok) { const t = await resp.text(); setStatus('Analyse-fejl: ' + t); }
+    else { const data = await resp.json(); setAnalysis(data); }
+  } catch (e:any) { setStatus('Analyse-fejl: ' + e.message); }
+  finally { setAnalyzing(false); }
+}
 
   if (!post) return <main><p>Henter...</p></main>;
 
