@@ -63,7 +63,7 @@ export default function PostsPage() {
             {rows.map(r => (
               <tr key={r.id}>
                 <td style={{ padding:6 }}>{r.title || '(uden titel)'}</td>
-                <td style={{ padding:6 }}>{r.status || 'draft'}</td>
+                <td style={{ padding:6 }}>{statusLabel(r.status)}</td>
                 <td style={{ padding:6 }}>{new Date(r.created_at).toLocaleString()}</td>
                 <td style={{ padding:6, display:'flex', gap:8 }}>
                   <Link href={`/posts/${r.id}/edit`}>Redigér</Link>
