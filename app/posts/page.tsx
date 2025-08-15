@@ -1,3 +1,4 @@
+// app/posts/page.tsx
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -8,22 +9,39 @@ type Row = { id:number; title:string|null; created_at:string; status:string|null
 export default function PostsPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function load() {
-      const { data, error } = await supabase
-        .from('posts_app')
-        .select('id, title, created_at, status')
-        .order('created_at', { ascending: false });
-      if (error) setError(error.message); else setRows((data || []) as Row[]);
-    }
+  async function load() {
+    const { data, error } = await supabase
+      .from('posts_app')
+      .select('id, title, created_at, status')
+      .order('created_at', { ascending: false });
+    if (error) setError(error.message); else setRows((data || []) as Row[]);
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function remove(id:number) {
+    const sure = window.confirm('Dette vil slette opslag permanent. Er du sikker?');
+    if (!sure) return;
+    const { data: s } = await supabase.auth.getSession();
+    const token = s.session?.access_token;
+    if (!token) { setInfo('Ikke logget ind.'); return; }
+    const resp = await fetch('/api/posts/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ id })
+    });
+    if (!resp.ok) { setInfo('Fejl: ' + (await resp.text())); return; }
+    setInfo('Slettet ✔');
     load();
-  }, []);
+  }
 
   return (
     <main>
       <h2>Dine opslag</h2>
       {error && <p>Fejl: {error}</p>}
+      {info && <p>{info}</p>}
       {rows.length === 0 ? (
         <p>Ingen opslag endnu. <a href="/posts/new">Opret et nyt</a>.</p>
       ) : (
@@ -44,7 +62,7 @@ export default function PostsPage() {
                 <td style={{ padding:6 }}>{new Date(r.created_at).toLocaleString()}</td>
                 <td style={{ padding:6, display:'flex', gap:8 }}>
                   <Link href={`/posts/${r.id}/edit`}>Redigér</Link>
-                  <Link href={`/posts/${r.id}/edit?dup=1`}>Kopiér</Link>
+                  <button onClick={() => remove(r.id)} style={{ color:'#b00' }}>Slet</button>
                 </td>
               </tr>
             ))}
