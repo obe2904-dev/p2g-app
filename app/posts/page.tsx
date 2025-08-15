@@ -23,12 +23,27 @@ type UsageState = {
   photo: { used: number; limit: number | null };
 } | null;
 
+type PostDetails = {
+  id: number;
+  title: string | null;
+  body: string | null;
+  image_url: string | null;
+  status: string | null;
+};
+
 export default function PostsPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [plan, setPlan] = useState<string | null>(null);
   const [usage, setUsage] = useState<UsageState>(null);
+
+  // AI-hjælp (liste): valgt opslag + UI state
+  const [selected, setSelected] = useState<PostDetails | null>(null);
+  const [tone, setTone] = useState('neutral');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiMsg, setAiMsg] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
 
   async function load() {
     const { data, error } = await supabase
@@ -106,6 +121,96 @@ export default function PostsPage() {
     load();
   }
 
+  // Åbn AI-panel for en række: hent fuldt opslag
+  async function openAi(postId: number) {
+    setAiMsg(null);
+    setSuggestions([]);
+    setTone('neutral');
+
+    const { data, error } = await supabase
+      .from('posts_app')
+      .select('id,title,body,image_url,status')
+      .eq('id', postId)
+      .single();
+
+    if (error || !data) { setAiMsg('Kunne ikke hente opslag.'); return; }
+    setSelected(data as PostDetails);
+  }
+
+  function closeAi() {
+    setSelected(null);
+    setSuggestions([]);
+    setAiMsg(null);
+  }
+
+  // Hent forslag via eksisterende /api/ai/suggest (samme som på "Nyt/Redigér")
+  async function getAiSuggestions() {
+    if (!selected || (!selected.title && !selected.body)) {
+      setAiMsg('Skriv en titel eller noget tekst først.');
+      return;
+    }
+    setAiLoading(true); setAiMsg(null);
+    try {
+      const { data: s } = await supabase.auth.getSession();
+      const token = s.session?.access_token;
+
+      const resp = await fetch('/api/ai/suggest', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+        },
+        body: JSON.stringify({
+          topic: selected.title || undefined,
+          tone,
+          post_body: selected.body || undefined
+        })
+      });
+
+      if (resp.status === 402) { setAiMsg(await resp.text()); return; }
+      if (!resp.ok) { setAiMsg('AI-fejl: ' + (await resp.text())); return; }
+
+      const data = await resp.json();
+      setSuggestions(Array.isArray(data.suggestions) ? data.suggestions : []);
+      await loadUsage(); // opdater tæller efter brug (server logger 'text')
+    } catch (e: any) {
+      setAiMsg('AI-fejl: ' + e.message);
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  // Opdater body på det valgte opslag med et forslag
+  async function applySuggestion(text: string) {
+    if (!selected) return;
+    setAiMsg('Indsætter forslag i opslag…');
+    try {
+      const { data: s } = await supabase.auth.getSession();
+      const token = s.session?.access_token;
+      if (!token) { setAiMsg('Ikke logget ind.'); return; }
+
+      const resp = await fetch('/api/posts/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({
+          id: selected.id,
+          title: selected.title,
+          body: text,
+          image_url: selected.image_url,
+          status: selected.status
+        })
+      });
+
+      if (!resp.ok) { setAiMsg('Fejl: ' + (await resp.text())); return; }
+      setSelected({ ...selected, body: text });
+      setAiMsg('Forslag indsat ✔ (gemt). Du kan finpudse i Redigér.');
+    } catch (e: any) {
+      setAiMsg('Fejl: ' + e.message);
+    }
+  }
+
+  const canUseText = usage ? (usage.text.limit === null || usage.text.used < usage.text.limit) : true;
+
   return (
     <RequireAuth>
       <main>
@@ -146,14 +251,61 @@ export default function PostsPage() {
                   <td style={{ padding: 6 }}>{r.title || '(uden titel)'}</td>
                   <td style={{ padding: 6 }}>{statusLabel(r.status)}</td>
                   <td style={{ padding: 6 }}>{new Date(r.created_at).toLocaleString()}</td>
-                  <td style={{ padding: 6, display: 'flex', gap: 8 }}>
+                  <td style={{ padding: 6, display: 'flex', gap: 8, flexWrap:'wrap' }}>
                     <Link href={`/posts/${r.id}/edit`}>Redigér</Link>
                     <button onClick={() => remove(r.id)} style={{ color: '#b00' }}>Slet</button>
+                    <button
+                      onClick={() => openAi(r.id)}
+                      disabled={!canUseText}
+                      title={canUseText ? 'Få AI-tekstforslag' : 'Din AI-tekst-kvote er opbrugt i denne måned'}
+                    >
+                      Få AI-tekst
+                    </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        )}
+
+        {/* AI-panel under tabellen */}
+        {selected && (
+          <section style={{ marginTop: 16, padding: 12, border: '1px solid #ddd', borderRadius: 8 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8 }}>
+              <h3 style={{ margin: 0 }}>AI-tekst til: “{selected.title || `(opslag #${selected.id})`}”</h3>
+              <button onClick={closeAi}>Luk</button>
+            </div>
+
+            <div style={{ marginTop: 8 }}>
+              <label style={{ marginRight: 6 }}>Tone:</label>
+              <select value={tone} onChange={e=>setTone(e.target.value)}>
+                <option value="neutral">Neutral/venlig</option>
+                <option value="salg">Mere salg</option>
+                <option value="informativ">Informativ</option>
+                <option value="hyggelig">Hyggelig</option>
+              </select>
+              <button onClick={getAiSuggestions} disabled={aiLoading} style={{ marginLeft: 8 }}>
+                {aiLoading ? 'Foreslår…' : 'Hent forslag (AI)'}
+              </button>
+            </div>
+
+            {aiMsg && <p style={{ marginTop: 8 }}>{aiMsg}</p>}
+
+            {suggestions.length > 0 && (
+              <ol style={{ marginTop: 12 }}>
+                {suggestions.map((s, i) => (
+                  <li key={i} style={{ marginTop: 10 }}>
+                    <div style={{ whiteSpace:'pre-wrap' }}>{s}</div>
+                    <div style={{ display:'flex', gap:8, marginTop: 6, flexWrap:'wrap' }}>
+                      <button onClick={() => applySuggestion(s)}>Indsæt i opslag (gem)</button>
+                      <button onClick={() => navigator.clipboard.writeText(s)}>Kopier</button>
+                      <Link href={`/posts/${selected.id}/edit`}>Åbn i Redigér</Link>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
         )}
       </main>
     </RequireAuth>
