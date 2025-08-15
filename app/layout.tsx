@@ -22,14 +22,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               Branche: {label(industry)}
             </span>
           </div>
-          <nav style={{ display: 'flex', gap: 12 }}>
-            <a href="/">Forside</a>
-            <a href="/signup">Signup</a>
-            <a href="/login">Login</a>
-            <a href="/welcome">Welcome</a>
-            <a href="/posts">Dine opslag</a>
-            <a href="/posts/new">Nyt opslag</a>
-          </nav>
+         <nav style={{ display: 'flex', gap: 12 }}>
+          <a href="/">Forside</a>
+          <a href="/signup">Signup</a>
+          <a href="/login">Login</a>
+          <a href="/welcome">Welcome</a>
+          <a href="/posts">Dine opslag</a>
+          <a href="/posts/new">Nyt opslag</a>
+          <a href="/performance">Performance</a>
+          <a href="/pricing">Pricing</a>
+        </nav>
+
         </header>
         {children}
       </body>
