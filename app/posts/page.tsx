@@ -1,10 +1,15 @@
-// app/posts/page.tsx
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 
 type Row = { id:number; title:string|null; created_at:string; status:string|null };
+
+// 🔤 Engelsk DB-værdi -> Dansk label
+const statusLabel = (s?: string | null) =>
+  s === 'ready' ? 'Klar'
+  : s === 'published' ? 'Udgivet'
+  : 'Udkast';
 
 export default function PostsPage() {
   const [rows, setRows] = useState<Row[]>([]);
