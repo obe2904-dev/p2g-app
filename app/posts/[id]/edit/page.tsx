@@ -80,9 +80,16 @@ export default function EditPost({ params }: { params: { id: string } }) {
   }
 
   async function analyzePhoto() {
-  if (!imageUrl) { setStatus('Indsæt eller upload et billede først.'); return; }
-  setAnalyzing(true); setAnalysis(null); setStatus(null);
+  // Brug post.image_url på edit-siden
+  if (!post || !post.image_url) {
+    setStatusMsg('Indsæt et billede først.');
+    return;
+  }
+  setStatusMsg(null);
+  setAnalysis(null);
+
   try {
+    // send token med (så vi kan tælle AI-forbrug)
     const { data: s } = await supabase.auth.getSession();
     const token = s.session?.access_token;
 
@@ -90,15 +97,20 @@ export default function EditPost({ params }: { params: { id: string } }) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+        ...(token ? { Authorization: 'Bearer ' + token } : {})
       },
-      body: JSON.stringify({ image_url: imageUrl })
+      body: JSON.stringify({ image_url: post.image_url })
     });
 
-    if (!resp.ok) { const t = await resp.text(); setStatus('Analyse-fejl: ' + t); }
-    else { const data = await resp.json(); setAnalysis(data); }
-  } catch (e:any) { setStatus('Analyse-fejl: ' + e.message); }
-  finally { setAnalyzing(false); }
+    if (!resp.ok) {
+      setStatusMsg('Analyse-fejl: ' + (await resp.text()));
+      return;
+    }
+
+    setAnalysis(await resp.json());
+  } catch (e: any) {
+    setStatusMsg('Analyse-fejl: ' + e.message);
+  }
 }
 
   if (!post) return <main><p>Henter...</p></main>;
