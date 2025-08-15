@@ -1,0 +1,73 @@
+/* app/globals.css — simpel basis-styling til MVP */
+
+:root {
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  padding: 0;
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans",
+               "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  line-height: 1.5;
+  background: #fff;
+  color: #111;
+}
+
+main {
+  /* layout.tsx sætter allerede maxWidth og padding via inline-styles */
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button, input, select, textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: 1px solid #ddd;
+  background: #f7f7f7;
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+
+button:hover {
+  background: #efefef;
+}
+
+input, select, textarea {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+}
+
+label {
+  font-weight: 600;
+}
+
+table {
+  width: 100%;
+}
+
+th, td {
+  font-size: 14px;
+}
+
+small {
+  color: #666;
+}
