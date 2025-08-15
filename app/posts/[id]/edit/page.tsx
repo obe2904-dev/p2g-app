@@ -60,6 +60,25 @@ export default function EditPost({ params }: { params: { id: string } }) {
     router.push(`/posts/${data.id}/edit`);
   }
 
+  async function doDelete() {
+    if (!post) return;
+    const sure = window.confirm('Dette vil slette opslag permanent. Er du sikker?');
+    if (!sure) return;
+
+    setStatusMsg('Sletter...');
+    const { data: s } = await supabase.auth.getSession();
+    const token = s.session?.access_token;
+    if (!token) { setStatusMsg('Ikke logget ind.'); return; }
+    const resp = await fetch('/api/posts/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ id: post.id })
+    });
+    if (!resp.ok) { setStatusMsg('Fejl: ' + (await resp.text())); return; }
+    setStatusMsg('Slettet ✔');
+    router.push('/posts');
+  }
+
   async function analyzePhoto() {
     if (!post?.image_url) { setStatusMsg('Indsæt et billede først.'); return; }
     setStatusMsg(null); setAnalysis(null);
@@ -96,6 +115,7 @@ export default function EditPost({ params }: { params: { id: string } }) {
         <button onClick={save} disabled={saving}>{saving ? 'Gemmer…' : 'Gem ændringer'}</button>
         <button onClick={duplicate}>Gem som kopi</button>
         <button onClick={analyzePhoto} disabled={!post.image_url}>Analyser billede</button>
+        <button onClick={doDelete} style={{ color:'#b00' }}>Slet opslag</button>
         <a href="/posts">Tilbage til liste</a>
       </div>
 
