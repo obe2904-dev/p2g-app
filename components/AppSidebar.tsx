@@ -15,12 +15,14 @@ function NavItem({
 }: {
   href: string;
   label: string;
-  currentPath: string;
+  currentPath: string | null; // <-- accepterer null
 }) {
+  const path = currentPath ?? ''; // <-- gardér mod null
+
   const active =
     href === '/'
-      ? currentPath === '/'
-      : currentPath === href || currentPath.startsWith(href + '/');
+      ? path === '/'
+      : path === href || path.startsWith(href + '/');
 
   return (
     <Link
@@ -41,7 +43,7 @@ function NavItem({
 }
 
 export default function AppSidebar() {
-  const pathname = usePathname();
+  const pathname = usePathname(); // string | null
   const [plan, setPlan] = useState<Plan>(null);
 
   useEffect(() => {
@@ -77,10 +79,8 @@ export default function AppSidebar() {
         )}
       </nav>
 
-      {/* Spacer så indholdet skubber evt. bundsektion ned */}
       <div style={{ flex: 1 }} />
-
-      {/* (Tom bund — log ud er flyttet til topbaren) */}
+      {/* Bundsektion er tom – Log ud ligger i topbaren */}
     </div>
   );
 }
