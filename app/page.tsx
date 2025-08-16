@@ -1,86 +1,93 @@
+// app/page.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import RequireAuth from '@/components/RequireAuth';
 
-export default function HomePage() {
-  const router = useRouter();
-  const [checking, setChecking] = useState(true);
-  const [isAuthed, setIsAuthed] = useState(false);
+type Profile = { full_name: string | null; plan_id: string | null };
+
+function planLabel(p?: string | null) {
+  switch ((p || '').toLowerCase()) {
+    case 'free': return 'Gratis';
+    case 'basic': return 'Basic';
+    case 'pro': return 'Pro';
+    case 'premium': return 'Premium';
+    default: return 'Gratis';
+  }
+}
+
+export default function DashboardPage() {
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let cancelled = false;
     (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        if (!cancelled) { setIsAuthed(false); setChecking(false); }
-        return;
-      }
-      setIsAuthed(true);
-
-      // tjek onboarding
-      const { data: prof } = await supabase
-        .from('profiles')
-        .select('default_org_id, tos_accept_at, dpa_accept_at')
-        .maybeSingle();
-
-      const needsOnboarding = !prof?.default_org_id || !prof?.tos_accept_at || !prof?.dpa_accept_at;
-
-      if (!cancelled) {
-        setChecking(false);
-        if (needsOnboarding) router.replace('/welcome');
-        else router.replace('/main'); // ✅ logget ind + onboardet → videre til overblik
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('full_name, plan_id')
+          .maybeSingle();
+        if (!error) setProfile(data as Profile);
+      } finally {
+        setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
-  }, [router]);
+  }, []);
 
-  // Mens vi tjekker login, vis kort besked
-  if (checking) return <main><p>Henter side…</p></main>;
+  const plan = profile?.plan_id || 'free';
+  const ctaLabel = (plan === 'pro' || plan === 'premium') ? 'Planlæg opslag' : 'Opret opslag';
 
-  // Ikke logget ind → vis offentlig landing (helt simpel placeholder)
-  if (!isAuthed) {
-    return (
-      <main style={{ maxWidth: 920, margin: '0 auto' }}>
-        <h1 style={{ marginBottom: 8 }}>Post2Grow til caféer</h1>
-        <p style={{ color:'#555', marginBottom: 16 }}>
-          Få idéer, tekstforslag og billedtjek. Start gratis – ingen kreditkort.
-        </p>
+  return (
+    <RequireAuth>
+      <main style={{ maxWidth: 1100, margin: '0 auto', padding: '8px 16px' }}>
+        {/* Header-linje */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          margin: '8px 0 16px'
+        }}>
+          <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+            <h2 style={{ margin: 0 }}>
+              Velkommen tilbage{profile?.full_name ? `, ${profile.full_name}` : ''} 👋
+            </h2>
+            <span
+              title={`Din nuværende plan: ${planLabel(plan)}`}
+              style={{
+                fontSize: 12,
+                border: '1px solid #ddd',
+                borderRadius: 999,
+                padding: '2px 10px',
+                background: '#fafafa'
+              }}
+            >
+              Plan: <strong>{planLabel(plan)}</strong>
+            </span>
+            <Link href="/pricing" style={{ fontSize: 12, textDecoration: 'underline' }}>
+              Opgradér
+            </Link>
+          </div>
 
-        <div style={{ display:'flex', gap:12, flexWrap:'wrap', marginBottom: 20 }}>
-          <a href="/auth?mode=signup" style={{ padding:'10px 14px', border:'1px solid #000', borderRadius:8, textDecoration:'none' }}>
-            Opret gratis konto
-          </a>
-          <a href="/auth?mode=login" style={{ padding:'10px 14px', border:'1px solid #ddd', borderRadius:8, textDecoration:'none' }}>
-            Log ind
-          </a>
-          <a href="/pricing" style={{ padding:'10px 14px', border:'1px solid #ddd', borderRadius:8, textDecoration:'none' }}>
-            Priser
-          </a>
-          <a href="/welcome" style={{ padding:'10px 14px', border:'1px solid #ddd', borderRadius:8, textDecoration:'none' }}>
-            Sådan fungerer onboarding
-          </a>
+          <Link
+            href="/posts/new"
+            style={{
+              border: '1px solid #111',
+              borderRadius: 8,
+              padding: '8px 12px',
+              textDecoration: 'none'
+            }}
+          >
+            {ctaLabel}
+          </Link>
         </div>
 
-        <section style={{ display:'grid', gap:12, gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))' }}>
-          <div style={{ border:'1px solid #eee', borderRadius:12, padding:14 }}>
-            <strong>Idéer & tekstforslag</strong>
-            <p style={{ margin:'6px 0 0' }}>AI hjælper dig på få sekunder.</p>
-          </div>
-          <div style={{ border:'1px solid #eee', borderRadius:12, padding:14 }}>
-            <strong>Billedtjek</strong>
-            <p style={{ margin:'6px 0 0' }}>Lys, format og skarphed før du poster.</p>
-          </div>
-          <div style={{ border:'1px solid #eee', borderRadius:12, padding:14 }}>
-            <strong>Performance</strong>
-            <p style={{ margin:'6px 0 0' }}>Se hvad der virker.</p>
-          </div>
-        </section>
+        {/* (Plads til næste felter på Overblik – vi bygger dem ét ad gangen) */}
+        {loading && <p>Henter…</p>}
       </main>
-    );
-  }
-
-  // Hvis vi ER logget ind, når vi rammer her, har useEffect allerede redirectet.
-  return <main><p>Sender dig videre…</p></main>;
+    </RequireAuth>
+  );
 }
