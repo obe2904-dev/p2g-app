@@ -38,7 +38,6 @@ export default function DashboardPage() {
   }, []);
 
   const plan = profile?.plan_id || 'free';
-  const ctaLabel = (plan === 'pro' || plan === 'premium') ? 'Planlæg opslag' : 'Opret opslag';
 
   return (
     <RequireAuth>
@@ -72,8 +71,9 @@ export default function DashboardPage() {
             </Link>
           </div>
 
+          {/* Højre side: Profil-knap i stedet for "Opret opslag" */}
           <Link
-            href="/posts/new"
+            href="/profile"
             style={{
               border: '1px solid #111',
               borderRadius: 8,
@@ -81,11 +81,11 @@ export default function DashboardPage() {
               textDecoration: 'none'
             }}
           >
-            {ctaLabel}
+            Profil
           </Link>
         </div>
 
-        {/* (Plads til næste felter på Overblik – vi bygger dem ét ad gangen) */}
+        {/* (Plads til de næste felter på Overblik) */}
         {loading && <p>Henter…</p>}
       </main>
     </RequireAuth>
