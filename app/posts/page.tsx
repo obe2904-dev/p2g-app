@@ -1,4 +1,4 @@
-// app/posts/page.tsx
+//app/(app)/posts/new/page.tsx
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
