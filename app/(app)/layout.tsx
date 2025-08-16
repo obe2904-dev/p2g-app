@@ -1,6 +1,7 @@
 // app/(app)/layout.tsx
 import type { ReactNode } from 'react';
 import AppSidebar from '@/components/AppSidebar';
+import TopBar from '@/components/TopBar';
 
 const SIDEBAR_W = 260;
 const HEADER_H = 64;
@@ -8,7 +9,7 @@ const HEADER_H = 64;
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div>
-      {/* FAST (fixed) sidebar m. egen scroll */}
+      {/* FAST (fixed) sidebar med egen scroll */}
       <aside
         style={{
           position: 'fixed',
@@ -27,7 +28,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <AppSidebar />
       </aside>
 
-      {/* FAST (fixed) topbar */}
+      {/* FAST (fixed) topbar med navn, plan, Profil, Log ud */}
       <header
         style={{
           position: 'fixed',
@@ -44,14 +45,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           zIndex: 900,
         }}
       >
-        <div style={{ fontWeight: 600 }}>Velkommen tilbage</div>
-        {/* plads til små badges/knapper i højre side senere */}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          {/* fx plan-badge, notifikationer osv. */}
-        </div>
+        <TopBar />
       </header>
 
-      {/* Hovedindhold – giver plads til sidebar + topbar */}
+      {/* Hovedindhold – plads til sidebar + topbar */}
       <main
         style={{
           marginLeft: SIDEBAR_W,
