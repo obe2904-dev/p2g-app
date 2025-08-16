@@ -10,10 +10,6 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const limits = await getPlanLimitsForUser(userId);
 const limit = limits.ai_text_month; // null = ubegrænset
 
-// ... din eksisterende tællelogik for "denne måned"
-if (limit !== null && (count ?? 0) >= limit) {
-  return res.status(402).send('Din AI-tekst-kvote for denne måned er opbrugt.');
-}
 // Byg prompt (dansk) og bed om JSON
 function buildPrompt(input: { topic?: string; tone?: string; baseBody?: string }) {
   const { topic, tone, baseBody } = input;
@@ -98,6 +94,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const used = typeof count === 'number' ? count : 0;
 
+    const limit = limits.ai_text_month; // number | null
+    if (limit !== null && (count ?? 0) >= limit) {
+    return res.status(402).send('Din AI-tekst-kvote for denne måned er opbrugt.');
+    }
+    
     if (limit !== null && used >= limit) {
       return res.status(402).send('Din AI-tekst-kvote for denne måned er opbrugt.');
     }
