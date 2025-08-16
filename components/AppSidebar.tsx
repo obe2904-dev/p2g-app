@@ -64,7 +64,7 @@ export default function AppSidebar() {
       {/* Logo / brand */}
       <div style={{ marginBottom: 16 }}>
         <div style={{ fontWeight: 700, fontSize: 18 }}>Post2Grow Café</div>
-        <div style={{ fontSize: 12, color: '#666' }}>Overblik</div>
+        <div style={{ fontSize: 12, color: '#666' }}></div>
       </div>
 
       {/* Navigation */}
