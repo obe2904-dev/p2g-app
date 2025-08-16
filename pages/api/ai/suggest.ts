@@ -7,8 +7,6 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const admin = createClient(supabaseUrl, serviceRoleKey);
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const limits = await getPlanLimitsForUser(userId);
-const limit = limits.ai_text_month; // null = ubegrænset
 
 // Byg prompt (dansk) og bed om JSON
 function buildPrompt(input: { topic?: string; tone?: string; baseBody?: string }) {
@@ -40,11 +38,13 @@ function simpleSuggestions(base: string, topic?: string, tone?: string): string[
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).send('Method not allowed');
+
   try {
     // Auth
     const auth = req.headers.authorization || '';
     const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
     if (!token) return res.status(401).send('Login påkrævet');
+
     const { data: u, error: uErr } = await admin.auth.getUser(token);
     if (uErr || !u?.user?.email) return res.status(401).send('Ugyldig session');
 
@@ -55,7 +55,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { topic, tone, post_body, post_id } = req.body || {};
     let baseBody: string = post_body || '';
 
-    // Hvis post_id er givet, hent body dérfra
+    // Hvis post_id er givet, hent body dérfra og tjek ejerskab
     if (!baseBody && post_id) {
       const { data: p, error: pErr } = await admin
         .from('posts_app')
@@ -67,24 +67,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       baseBody = p.body || '';
     }
 
-    // Plan/kvote
-    const { data: prof } = await admin.from('profiles').select('plan_id').eq('user_id', userId).single();
-    const plan = prof?.plan_id || 'basic';
+    // === Kvote via plan_limits ===
+    const limits = await getPlanLimitsForUser(userId);
+    const monthlyLimit = limits.ai_text_month; // number | null (null = ubegrænset)
 
-    const { data: limRow } = await admin
-      .from('plan_features')
-      .select('limit_value')
-      .eq('plan_id', plan)
-      .eq('feature_key', 'ai_text_monthly_limit')
-      .maybeSingle();
+    // Tæl forbrug for indeværende måned
+    const now = new Date();
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
-    // Normaliser limit: number | null (aldrig undefined)
-    const limit: number | null =
-      limRow && limRow.limit_value !== undefined && limRow.limit_value !== null
-        ? Number(limRow.limit_value)
-        : null;
-
-    const start = new Date(); start.setDate(1); start.setHours(0,0,0,0);
     const { count } = await admin
       .from('ai_usage')
       .select('id', { count: 'exact', head: true })
@@ -94,12 +84,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const used = typeof count === 'number' ? count : 0;
 
-    const limit = limits.ai_text_month; // number | null
-    if (limit !== null && (count ?? 0) >= limit) {
-    return res.status(402).send('Din AI-tekst-kvote for denne måned er opbrugt.');
-    }
-    
-    if (limit !== null && used >= limit) {
+    if (monthlyLimit !== null && used >= monthlyLimit) {
       return res.status(402).send('Din AI-tekst-kvote for denne måned er opbrugt.');
     }
 
@@ -132,7 +117,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const data = await r.json();
       const content: string = data.choices?.[0]?.message?.content || '';
 
-      // Parse JSON
+      // Parse JSON → suggestions
       try {
         const json = JSON.parse(content);
         if (Array.isArray(json.suggestions)) {
@@ -152,8 +137,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (!suggestions.length) suggestions = simpleSuggestions(baseBody, topic, tone);
 
-    // Log forbrug EFTER succes
-    await admin.from('ai_usage').insert({ user_email: email, kind: 'text' });
+    // Log forbrug EFTER succes (sørg for at ai_usage har kolonnen used_at med default now())
+    await admin.from('ai_usage').insert({ user_email: email, kind: 'text', used_at: new Date().toISOString() });
 
     return res.status(200).json({ suggestions });
   } catch (e: any) {
