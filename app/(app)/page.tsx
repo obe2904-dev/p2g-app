@@ -51,9 +51,7 @@ export default function DashboardPage() {
           margin: '8px 0 16px'
         }}>
           <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
-            <h2 style={{ margin: 0 }}>
-              Velkommen tilbage{profile?.full_name ? `, ${profile.full_name}` : ''} 👋
-            </h2>
+            
             <span
               title={`Din nuværende plan: ${planLabel(plan)}`}
               style={{
