@@ -63,7 +63,7 @@ export default function AppSidebar() {
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
       {/* Logo / brand */}
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontWeight: 700, fontSize: 18 }}>Post2Grow Café</div>
+        <div style={{ fontWeight: 700, fontSize: 18 }}>Post2Grow</div>
         <div style={{ fontSize: 12, color: '#666' }}></div>
       </div>
 
