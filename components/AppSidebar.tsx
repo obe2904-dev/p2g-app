@@ -70,7 +70,7 @@ export default function AppSidebar() {
       {/* Navigation */}
       <nav style={{ display: 'grid', gap: 6 }}>
         <NavItem href="/" label="Dashboard" currentPath={pathname} />
-        <NavItem href="/brand" label="Brandprofil" currentPath={pathname} />
+        <NavItem href="/brand" label="Virksomhedsprofil" currentPath={pathname} />
         <NavItem href="/calendar" label="Kalender" currentPath={pathname} />
         <NavItem href="/posts" label="Opslag" currentPath={pathname} />
         <NavItem href="/gallery" label="Billeder og video" currentPath={pathname} />
