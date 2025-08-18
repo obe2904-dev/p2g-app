@@ -36,19 +36,21 @@ export default function DashboardPage() {
         monthStart.setHours(0, 0, 0, 0);
         const startISO = monthStart.toISOString();
 
-        // Opslag i alt
+        // Opslag i alt (KUN publicerede)
         const { count: totalPosts } = await supabase
-          .from('posts_app')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_email', email);
+        .from('posts_app')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_email', email)
+        .eq('status', 'published');
 
-        // Opslag denne måned
+        // Opslag denne måned (KUN publicerede)
         const { count: postsThisMonth } = await supabase
-          .from('posts_app')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_email', email)
-          .gte('created_at', startISO);
-
+        .from('posts_app')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_email', email)
+        .eq('status', 'published')
+        .gte('created_at', startISO);
+        
         // AI-forbrug – tekst
         const { count: aiTextThisMonth } = await supabase
           .from('ai_usage')
@@ -92,17 +94,19 @@ export default function DashboardPage() {
           alignItems: 'stretch',
         }}
       >
-        {/* Kort 1: Opslag i alt */}
+        
+        {/* Kort 1: Opslag denne måned */}
         <div style={cardStyle}>
-          <div style={cardTitle}>Opslag i alt</div>
-          <div style={bigNumber}>
-            {loading ? '—' : counts.totalPosts.toLocaleString('da-DK')}
-          </div>
-          <div style={subText}>
-            Opslag denne måned:{' '}
-            <strong>{loading ? '—' : counts.postsThisMonth.toLocaleString('da-DK')}</strong>
-          </div>
-        </div>
+        <div style={cardTitle}>Opslag denne måned</div>
+        <div style={bigNumber}>
+        {loading ? '—' : counts.postsThisMonth.toLocaleString('da-DK')}
+      </div>
+    <div style={subText}>
+      
+    I alt:{' '}
+    <strong>{loading ? '—' : counts.totalPosts.toLocaleString('da-DK')}</strong>
+  </div>
+</div>
 
         {/* Kort 2: AI denne måned */}
         <div style={cardStyle}>
