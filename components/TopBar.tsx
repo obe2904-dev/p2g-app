@@ -23,13 +23,23 @@ export default function TopBar() {
 
   useEffect(() => {
     (async () => {
+      // Hent bruger
       const { data: u } = await supabase.auth.getUser();
+      const uid = u.user?.id || null;
       setEmail(u.user?.email || '');
-      const { data } = await supabase
-        .from('profiles')
-        .select('full_name, plan_id')
-        .maybeSingle();
-      setProfile(data as Profile);
+
+      // Hent profil for netop denne bruger (mere robust end maybeSingle uden filter)
+      if (uid) {
+        const { data } = await supabase
+          .from('profiles')
+          .select('full_name, plan_id')
+          .eq('user_id', uid)
+          .maybeSingle();
+
+        setProfile((data || null) as Profile | null);
+      } else {
+        setProfile(null);
+      }
     })();
   }, []);
 
@@ -42,6 +52,7 @@ export default function TopBar() {
 
   async function logout() {
     await supabase.auth.signOut();
+    // tilbage til login
     window.location.href = '/auth?mode=login';
   }
 
