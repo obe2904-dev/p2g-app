@@ -7,8 +7,8 @@ import { supabase } from '@/lib/supabaseClient';
 export const dynamic = 'force-dynamic';
 
 type Counts = {
-  totalPosts: number;         // Udgivet i alt
-  postsThisMonth: number;     // Udgivet denne måned
+  totalPosts: number;
+  postsThisMonth: number;
   aiTextThisMonth: number;
   aiPhotoThisMonth: number;
 };
@@ -31,28 +31,25 @@ export default function DashboardPage() {
         const email = u.user?.email;
         if (!email) { setErr('Ikke logget ind.'); return; }
 
-        // Start på indeværende måned (00:00 den 1.)
         const monthStart = new Date();
         monthStart.setDate(1);
         monthStart.setHours(0, 0, 0, 0);
         const startISO = monthStart.toISOString();
 
-        // UDGIVET i alt
-        const { count: totalPublished } = await supabase
+        // Opslag i alt (alle statuser)
+        const { count: totalPosts } = await supabase
           .from('posts_app')
           .select('id', { count: 'exact', head: true })
-          .eq('user_email', email)
-          .eq('status', 'published');
+          .eq('user_email', email);
 
-        // UDGIVET denne måned (bruger created_at som proxy for publiceringsdato)
-        const { count: publishedThisMonth } = await supabase
+        // Opslag denne måned (alle statuser)
+        const { count: postsThisMonth } = await supabase
           .from('posts_app')
           .select('id', { count: 'exact', head: true })
           .eq('user_email', email)
-          .eq('status', 'published')
           .gte('created_at', startISO);
 
-        // AI-forbrug — tekst
+        // AI-forbrug – tekst (denne måned)
         const { count: aiTextThisMonth } = await supabase
           .from('ai_usage')
           .select('id', { count: 'exact', head: true })
@@ -60,7 +57,7 @@ export default function DashboardPage() {
           .eq('kind', 'text')
           .gte('used_at', startISO);
 
-        // AI-forbrug — foto
+        // AI-forbrug – foto (denne måned)
         const { count: aiPhotoThisMonth } = await supabase
           .from('ai_usage')
           .select('id', { count: 'exact', head: true })
@@ -69,8 +66,8 @@ export default function DashboardPage() {
           .gte('used_at', startISO);
 
         setCounts({
-          totalPosts: totalPublished ?? 0,
-          postsThisMonth: publishedThisMonth ?? 0,
+          totalPosts: totalPosts ?? 0,
+          postsThisMonth: postsThisMonth ?? 0,
           aiTextThisMonth: aiTextThisMonth ?? 0,
           aiPhotoThisMonth: aiPhotoThisMonth ?? 0,
         });
@@ -94,15 +91,15 @@ export default function DashboardPage() {
           gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
         }}
       >
-        {/* Kort 1: Opslag denne måned (Udgivet) */}
+        {/* Kort 1: Opslag i alt */}
         <div style={cardStyle}>
-          <div style={cardTitle}>Opslag denne måned</div>
+          <div style={cardTitle}>Opslag i alt</div>
           <div style={bigNumber}>
-            {loading ? '—' : counts.postsThisMonth.toLocaleString('da-DK')}
+            {loading ? '—' : counts.totalPosts.toLocaleString('da-DK')}
           </div>
           <div style={subText}>
-            Opslag i alt:{' '}
-            <strong>{loading ? '—' : counts.totalPosts.toLocaleString('da-DK')}</strong>
+            Opslag denne måned:{' '}
+            <strong>{loading ? '—' : counts.postsThisMonth.toLocaleString('da-DK')}</strong>
           </div>
         </div>
 
@@ -114,6 +111,17 @@ export default function DashboardPage() {
             Tekst: <strong>{loading ? '—' : counts.aiTextThisMonth}</strong> · Foto:{' '}
             <strong>{loading ? '—' : counts.aiPhotoThisMonth}</strong>
           </div>
+        </div>
+
+        {/* Kort 3: Dobbelt bredde (tomt for nu) */}
+        <div
+          style={{
+            ...cardStyle,
+            gridColumn: 'span 2',
+            minHeight: 160,
+          }}
+        >
+          {/* Tomt indhold – reserveret til næste feature */}
         </div>
       </section>
 
