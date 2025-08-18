@@ -24,7 +24,7 @@ function AuthInner() {
     setMsg(null);
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth` }
+      options: { redirectTo: `${window.location.origin}/auth/callback` }
     });
   }
 
@@ -32,7 +32,7 @@ function AuthInner() {
     setMsg('Sender login-link…');
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${window.location.origin}/auth` }
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback` }
     });
     if (error) setMsg('Fejl: ' + error.message);
     else setMsg('Tjek din e-mail og klik på linket for at logge ind.');
