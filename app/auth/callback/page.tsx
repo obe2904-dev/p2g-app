@@ -13,7 +13,7 @@ export default function AuthCallback() {
       await supabase.auth.getSession();
 
       // Send brugeren videre: /welcome afgør selv om onboarding er færdig
-      router.replace('/welcome');
+      router.replace('/auth/callback');
     })();
   }, [router]);
 
