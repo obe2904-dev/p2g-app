@@ -7,8 +7,8 @@ import { supabase } from '@/lib/supabaseClient';
 export const dynamic = 'force-dynamic';
 
 type Counts = {
-  totalPosts: number;
-  postsThisMonth: number;
+  totalPosts: number;       // nu: kun UDGIVET i alt
+  postsThisMonth: number;   // nu: kun UDGIVET denne måned
   aiTextThisMonth: number;
   aiPhotoThisMonth: number;
 };
@@ -36,17 +36,19 @@ export default function DashboardPage() {
         monthStart.setHours(0, 0, 0, 0);
         const startISO = monthStart.toISOString();
 
-        // Opslag i alt (alle statuser)
+        // UDGIVET i alt
         const { count: totalPosts } = await supabase
           .from('posts_app')
           .select('id', { count: 'exact', head: true })
-          .eq('user_email', email);
+          .eq('user_email', email)
+          .eq('status', 'published');
 
-        // Opslag denne måned (alle statuser)
+        // UDGIVET denne måned
         const { count: postsThisMonth } = await supabase
           .from('posts_app')
           .select('id', { count: 'exact', head: true })
           .eq('user_email', email)
+          .eq('status', 'published')
           .gte('created_at', startISO);
 
         // AI-forbrug – tekst (denne måned)
@@ -91,15 +93,15 @@ export default function DashboardPage() {
           gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
         }}
       >
-        {/* Kort 1: Opslag i alt */}
+        {/* Kort 1: Opslag denne måned (kun Udgivet) */}
         <div style={cardStyle}>
-          <div style={cardTitle}>Opslag i alt</div>
+          <div style={cardTitle}>Opslag denne måned</div>
           <div style={bigNumber}>
-            {loading ? '—' : counts.totalPosts.toLocaleString('da-DK')}
+            {loading ? '—' : counts.postsThisMonth.toLocaleString('da-DK')}
           </div>
           <div style={subText}>
-            Opslag denne måned:{' '}
-            <strong>{loading ? '—' : counts.postsThisMonth.toLocaleString('da-DK')}</strong>
+            I alt:{' '}
+            <strong>{loading ? '—' : counts.totalPosts.toLocaleString('da-DK')}</strong>
           </div>
         </div>
 
@@ -111,17 +113,6 @@ export default function DashboardPage() {
             Tekst: <strong>{loading ? '—' : counts.aiTextThisMonth}</strong> · Foto:{' '}
             <strong>{loading ? '—' : counts.aiPhotoThisMonth}</strong>
           </div>
-        </div>
-
-        {/* Kort 3: Dobbelt bredde (tomt for nu) */}
-        <div
-          style={{
-            ...cardStyle,
-            gridColumn: 'span 2',
-            minHeight: 160,
-          }}
-        >
-          {/* Tomt indhold – reserveret til næste feature */}
         </div>
       </section>
 
