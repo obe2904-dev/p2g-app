@@ -36,22 +36,20 @@ export default function DashboardPage() {
         monthStart.setHours(0, 0, 0, 0);
         const startISO = monthStart.toISOString();
 
-        // Opslag i alt (KUN publicerede)
+        // KUN publicerede opslag i tællingerne
         const { count: totalPosts } = await supabase
-        .from('posts_app')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_email', email)
-        .eq('status', 'published');
+          .from('posts_app')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_email', email)
+          .eq('status', 'published');
 
-        // Opslag denne måned (KUN publicerede)
         const { count: postsThisMonth } = await supabase
-        .from('posts_app')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_email', email)
-        .eq('status', 'published')
-        .gte('created_at', startISO);
-        
-        // AI-forbrug – tekst
+          .from('posts_app')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_email', email)
+          .eq('status', 'published')
+          .gte('created_at', startISO);
+
         const { count: aiTextThisMonth } = await supabase
           .from('ai_usage')
           .select('id', { count: 'exact', head: true })
@@ -59,7 +57,6 @@ export default function DashboardPage() {
           .eq('kind', 'text')
           .gte('used_at', startISO);
 
-        // AI-forbrug – foto
         const { count: aiPhotoThisMonth } = await supabase
           .from('ai_usage')
           .select('id', { count: 'exact', head: true })
@@ -84,73 +81,100 @@ export default function DashboardPage() {
   const aiTotal = counts.aiTextThisMonth + counts.aiPhotoThisMonth;
 
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
-      {/* ÉN række med tre kolonner: 1fr, 1fr, 2fr */}
-      <section
-        style={{
-          display: 'grid',
-          gap: 12,
-          gridTemplateColumns: '1fr 1fr 2fr',
-          alignItems: 'stretch',
-        }}
-      >
-        
-        {/* Kort 1: Opslag denne måned */}
-        <div style={cardStyle}>
-        <div style={cardTitle}>Opslag denne måned</div>
-        <div style={bigNumber}>
-        {loading ? '—' : counts.postsThisMonth.toLocaleString('da-DK')}
-      </div>
-    <div style={subText}>
-      
-    I alt:{' '}
-    <strong>{loading ? '—' : counts.totalPosts.toLocaleString('da-DK')}</strong>
-  </div>
-</div>
+    <div className="wrap">
+      <section className="dashRow">
+        {/* Kort 1: Opslag denne måned (venstre) */}
+        <div className="card">
+          <div className="card-title">Opslag denne måned</div>
+          <div className="card-big">
+            {loading ? '—' : counts.postsThisMonth.toLocaleString('da-DK')}
+          </div>
+          <div className="card-sub">
+            I alt:{' '}
+            <strong>{loading ? '—' : counts.totalPosts.toLocaleString('da-DK')}</strong>
+          </div>
+        </div>
 
-        {/* Kort 2: AI denne måned */}
-        <div style={cardStyle}>
-          <div style={cardTitle}>AI denne måned</div>
-          <div style={bigNumber}>{loading ? '—' : aiTotal.toLocaleString('da-DK')}</div>
-          <div style={subText}>
+        {/* Kort 2: AI denne måned (midt) */}
+        <div className="card">
+          <div className="card-title">AI denne måned</div>
+          <div className="card-big">{loading ? '—' : aiTotal.toLocaleString('da-DK')}</div>
+          <div className="card-sub">
             Tekst: <strong>{loading ? '—' : counts.aiTextThisMonth}</strong> · Foto:{' '}
             <strong>{loading ? '—' : counts.aiPhotoThisMonth}</strong>
           </div>
         </div>
 
-        {/* Kort 3: Dobbelt bredde (pladsholder) */}
-        <div style={{ ...cardStyle, minHeight: 120 }}>
-          {/* Tomt for nu – klar til diagram/nyhed/indsigt senere */}
+        {/* Kort 3: Dobbelt bredde (højre) – placeholder */}
+        <div className="card card-large">
+          {/* Tomt for nu – klar til diagram/indsigt senere */}
         </div>
       </section>
 
       {err && <p style={{ color: '#b00' }}>{err}</p>}
+
+      <style jsx>{`
+        /* Layout-ramme */
+        .wrap { display: grid; gap: 16px; }
+
+        /* Én række, tre kolonner: 1fr, 1fr, 2fr */
+        .dashRow {
+          display: grid;
+          gap: 12px;
+          grid-template-columns: 1fr 1fr 2fr;
+          align-items: stretch;
+        }
+
+        /* Min-bredder på de to små kort, så de ikke presses for meget */
+        .dashRow > .card:nth-child(1),
+        .dashRow > .card:nth-child(2) {
+          min-width: 260px;
+        }
+        /* Større minimum på det brede kort */
+        .dashRow > .card-large {
+          min-width: 360px;
+          min-height: 120px;
+        }
+
+        /* Kort-styles */
+        .card {
+          border: 1px solid #eee;
+          border-radius: 12px;
+          padding: 16px;
+          background: #fff;
+          box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+        }
+        .card-title {
+          font-size: 12px;
+          color: #666;
+          margin-bottom: 6px;
+        }
+        .card-big {
+          font-size: clamp(22px, 3.2vw, 28px);
+          font-weight: 700;
+          line-height: 1.1;
+          margin-bottom: 6px;
+        }
+        .card-sub {
+          font-size: clamp(12px, 1.4vw, 13px);
+          color: #555;
+        }
+
+        /* Responsiv opførsel: to kolonner (smalle skærme) */
+        @media (max-width: 1100px) {
+          .dashRow {
+            grid-template-columns: minmax(240px, 1fr) minmax(240px, 1fr);
+          }
+          .dashRow > .card-large {
+            grid-column: 1 / -1; /* brede kort går på ny linje */
+          }
+        }
+
+        /* Én kolonne på meget smalle skærme */
+        @media (max-width: 560px) {
+          .dashRow { grid-template-columns: 1fr; }
+        }
+      `}</style>
     </div>
   );
 }
-
-const cardStyle: React.CSSProperties = {
-  border: '1px solid #eee',
-  borderRadius: 12,
-  padding: 16,
-  background: '#fff',
-  boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-};
-
-const cardTitle: React.CSSProperties = {
-  fontSize: 12,
-  color: '#666',
-  marginBottom: 6,
-};
-
-const bigNumber: React.CSSProperties = {
-  fontSize: 28,
-  fontWeight: 700,
-  lineHeight: 1.1,
-  marginBottom: 6,
-};
-
-const subText: React.CSSProperties = {
-  fontSize: 13,
-  color: '#555',
-};
