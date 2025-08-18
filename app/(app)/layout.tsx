@@ -4,6 +4,7 @@
 import type { ReactNode } from 'react';
 import AppSidebar from '@/components/AppSidebar';
 import TopBar from '@/components/TopBar';
+import './styles/app.css';
 
 const SIDEBAR_W = 260;
 const HEADER_H = 64;
@@ -62,47 +63,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         }}
       >
         {children}
-        <style jsx global>{`
-          :root{
-            /* Responsive font-sizes (clamp = skalerer mellem min..max) */
-            --fs-12: clamp(11px, 1.1vw, 12px);
-            --fs-13: clamp(12px, 1.2vw, 13px);
-            --fs-16: clamp(14px, 1.6vw, 16px);
-            --fs-24: clamp(18px, 2.4vw, 24px);
-
-            /* Cards */
-            --radius: 12px;
-            --card-pad: clamp(12px, 2vw, 16px);
-          }
-
-          .card{
-            border: 1px solid #eee;
-            border-radius: var(--radius);
-            padding: var(--card-pad);
-            background: #fff;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.03);
-            min-width: 220px;
-          }
-          .card-title{ font-size: var(--fs-12); color:#666; margin-bottom: 6px; }
-          .card-big{ font-size: var(--fs-24); font-weight: 700; line-height: 1.1; margin-bottom: 6px; }
-          .card-sub{ font-size: var(--fs-13); color:#555; }
-
-          .dash-row{
-            display: grid;
-            gap: 12px;
-            grid-template-columns: 1.1fr 1.1fr 1.8fr;
-            align-items: stretch;
-          }
-
-          @media (max-width: 1100px){
-            .dash-row{ grid-template-columns: minmax(220px,1fr) minmax(220px,1fr); }
-            .dash-row > .card:last-child { grid-column: 1 / -1; }
-          }
-
-          @media (max-width: 520px){
-            .dash-row{ grid-template-columns: 1fr; }
-          }
-        `}</style>
       </main>
     </div>
   );
