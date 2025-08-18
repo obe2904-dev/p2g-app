@@ -7,8 +7,8 @@ import { supabase } from '@/lib/supabaseClient';
 export const dynamic = 'force-dynamic';
 
 type Counts = {
-  totalPosts: number;       // nu: kun UDGIVET i alt
-  postsThisMonth: number;   // nu: kun UDGIVET denne måned
+  totalPosts: number;
+  postsThisMonth: number;
   aiTextThisMonth: number;
   aiPhotoThisMonth: number;
 };
@@ -36,22 +36,20 @@ export default function DashboardPage() {
         monthStart.setHours(0, 0, 0, 0);
         const startISO = monthStart.toISOString();
 
-        // UDGIVET i alt
+        // Opslag i alt
         const { count: totalPosts } = await supabase
           .from('posts_app')
           .select('id', { count: 'exact', head: true })
-          .eq('user_email', email)
-          .eq('status', 'published');
+          .eq('user_email', email);
 
-        // UDGIVET denne måned
+        // Opslag denne måned
         const { count: postsThisMonth } = await supabase
           .from('posts_app')
           .select('id', { count: 'exact', head: true })
           .eq('user_email', email)
-          .eq('status', 'published')
           .gte('created_at', startISO);
 
-        // AI-forbrug – tekst (denne måned)
+        // AI-forbrug – tekst
         const { count: aiTextThisMonth } = await supabase
           .from('ai_usage')
           .select('id', { count: 'exact', head: true })
@@ -59,7 +57,7 @@ export default function DashboardPage() {
           .eq('kind', 'text')
           .gte('used_at', startISO);
 
-        // AI-forbrug – foto (denne måned)
+        // AI-forbrug – foto
         const { count: aiPhotoThisMonth } = await supabase
           .from('ai_usage')
           .select('id', { count: 'exact', head: true })
@@ -85,23 +83,24 @@ export default function DashboardPage() {
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
-      {/* Øverste kort – responsivt grid */}
+      {/* ÉN række med tre kolonner: 1fr, 1fr, 2fr */}
       <section
         style={{
           display: 'grid',
           gap: 12,
-          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+          gridTemplateColumns: '1fr 1fr 2fr',
+          alignItems: 'stretch',
         }}
       >
-        {/* Kort 1: Opslag denne måned (kun Udgivet) */}
+        {/* Kort 1: Opslag i alt */}
         <div style={cardStyle}>
-          <div style={cardTitle}>Opslag denne måned</div>
+          <div style={cardTitle}>Opslag i alt</div>
           <div style={bigNumber}>
-            {loading ? '—' : counts.postsThisMonth.toLocaleString('da-DK')}
+            {loading ? '—' : counts.totalPosts.toLocaleString('da-DK')}
           </div>
           <div style={subText}>
-            I alt:{' '}
-            <strong>{loading ? '—' : counts.totalPosts.toLocaleString('da-DK')}</strong>
+            Opslag denne måned:{' '}
+            <strong>{loading ? '—' : counts.postsThisMonth.toLocaleString('da-DK')}</strong>
           </div>
         </div>
 
@@ -113,6 +112,11 @@ export default function DashboardPage() {
             Tekst: <strong>{loading ? '—' : counts.aiTextThisMonth}</strong> · Foto:{' '}
             <strong>{loading ? '—' : counts.aiPhotoThisMonth}</strong>
           </div>
+        </div>
+
+        {/* Kort 3: Dobbelt bredde (pladsholder) */}
+        <div style={{ ...cardStyle, minHeight: 120 }}>
+          {/* Tomt for nu – klar til diagram/nyhed/indsigt senere */}
         </div>
       </section>
 
