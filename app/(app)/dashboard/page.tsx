@@ -172,7 +172,7 @@ export default function DashboardPage() {
       <section style={{ ...cardStyle, minHeight: 220 }}>
         {activeTab === 'ai' && (
           <div>
-            <h3 style={{ marginTop: 0 }}>AI-assistent</h3>
+            <h3 style={{ marginTop: 0 }}>AI-assistent til ideer og tekst</h3>
             <p style={{ color: '#555' }}>
               Her kommer idébank, tekstforslag og billed-hjælp (branchetilpasset). Vi fylder det ud i næste step.
             </p>
