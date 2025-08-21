@@ -13,6 +13,8 @@ type Counts = {
   aiPhotoThisMonth: number;
 };
 
+type TabKey = 'ai' | 'plan' | 'perf';
+
 export default function DashboardPage() {
   const [counts, setCounts] = useState<Counts>({
     totalPosts: 0,
@@ -22,6 +24,9 @@ export default function DashboardPage() {
   });
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+
+  // NYT: aktiv fane (default: AI-assistent)
+  const [activeTab, setActiveTab] = useState<TabKey>('ai');
 
   useEffect(() => {
     (async () => {
@@ -36,13 +41,14 @@ export default function DashboardPage() {
         monthStart.setHours(0, 0, 0, 0);
         const startISO = monthStart.toISOString();
 
-        // KUN publicerede opslag i tællingerne
+        // Opslag i alt (KUN publicerede)
         const { count: totalPosts } = await supabase
           .from('posts_app')
           .select('id', { count: 'exact', head: true })
           .eq('user_email', email)
           .eq('status', 'published');
 
+        // Opslag denne måned (KUN publicerede)
         const { count: postsThisMonth } = await supabase
           .from('posts_app')
           .select('id', { count: 'exact', head: true })
@@ -50,6 +56,7 @@ export default function DashboardPage() {
           .eq('status', 'published')
           .gte('created_at', startISO);
 
+        // AI-forbrug – tekst
         const { count: aiTextThisMonth } = await supabase
           .from('ai_usage')
           .select('id', { count: 'exact', head: true })
@@ -57,6 +64,7 @@ export default function DashboardPage() {
           .eq('kind', 'text')
           .gte('used_at', startISO);
 
+        // AI-forbrug – foto
         const { count: aiPhotoThisMonth } = await supabase
           .from('ai_usage')
           .select('id', { count: 'exact', head: true })
@@ -80,101 +88,142 @@ export default function DashboardPage() {
 
   const aiTotal = counts.aiTextThisMonth + counts.aiPhotoThisMonth;
 
+  // Små helpers til fane-styles
+  function tabBtnStyle(active: boolean): React.CSSProperties {
+    return {
+      padding: '8px 12px',
+      border: '1px solid #ddd',
+      borderRadius: 8,
+      background: active ? '#111' : '#fff',
+      color: active ? '#fff' : '#111',
+      cursor: 'pointer',
+      fontSize: 14,
+    };
+  }
+
   return (
-    <div className="wrap">
-      <section className="dashRow">
-        {/* Kort 1: Opslag denne måned (venstre) */}
-        <div className="card">
-          <div className="card-title">Opslag denne måned</div>
-          <div className="card-big">
+    <div style={{ display: 'grid', gap: 16 }}>
+      {/* Øverste række med tre kolonner: 1fr, 1fr, 2fr */}
+      <section
+        style={{
+          display: 'grid',
+          gap: 12,
+          gridTemplateColumns: '1fr 1fr 2fr',
+          alignItems: 'stretch',
+        }}
+      >
+        {/* Kort 1: Opslag denne måned */}
+        <div style={cardStyle}>
+          <div style={cardTitle}>Opslag denne måned</div>
+          <div style={bigNumber}>
             {loading ? '—' : counts.postsThisMonth.toLocaleString('da-DK')}
           </div>
-          <div className="card-sub">
+          <div style={subText}>
             I alt:{' '}
             <strong>{loading ? '—' : counts.totalPosts.toLocaleString('da-DK')}</strong>
           </div>
         </div>
 
-        {/* Kort 2: AI denne måned (midt) */}
-        <div className="card">
-          <div className="card-title">AI denne måned</div>
-          <div className="card-big">{loading ? '—' : aiTotal.toLocaleString('da-DK')}</div>
-          <div className="card-sub">
+        {/* Kort 2: AI denne måned */}
+        <div style={cardStyle}>
+          <div style={cardTitle}>AI denne måned</div>
+          <div style={bigNumber}>{loading ? '—' : aiTotal.toLocaleString('da-DK')}</div>
+          <div style={subText}>
             Tekst: <strong>{loading ? '—' : counts.aiTextThisMonth}</strong> · Foto:{' '}
             <strong>{loading ? '—' : counts.aiPhotoThisMonth}</strong>
           </div>
         </div>
 
-        {/* Kort 3: Dobbelt bredde (højre) – placeholder */}
-        <div className="card card-large">
+        {/* Kort 3: Dobbelt bredde (pladsholder) */}
+        <div style={{ ...cardStyle, minHeight: 120 }}>
           {/* Tomt for nu – klar til diagram/indsigt senere */}
         </div>
       </section>
 
+      {/* Faner (dansk) */}
+      <nav style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          onClick={() => setActiveTab('ai')}
+          style={tabBtnStyle(activeTab === 'ai')}
+          aria-pressed={activeTab === 'ai'}
+        >
+          AI-assistent
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('plan')}
+          style={tabBtnStyle(activeTab === 'plan')}
+          aria-pressed={activeTab === 'plan'}
+        >
+          Plan & publicering
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('perf')}
+          style={tabBtnStyle(activeTab === 'perf')}
+          aria-pressed={activeTab === 'perf'}
+        >
+          Performance
+        </button>
+      </nav>
+
+      {/* Tab-indhold (placeholder for nu) */}
+      <section style={{ ...cardStyle, minHeight: 220 }}>
+        {activeTab === 'ai' && (
+          <div>
+            <h3 style={{ marginTop: 0 }}>AI-assistent</h3>
+            <p style={{ color: '#555' }}>
+              Her kommer idébank, tekstforslag og billed-hjælp (branchetilpasset). Vi fylder det ud i næste step.
+            </p>
+          </div>
+        )}
+        {activeTab === 'plan' && (
+          <div>
+            <h3 style={{ marginTop: 0 }}>Plan & publicering</h3>
+            <p style={{ color: '#555' }}>
+              Her kommer kalenderen, planlagte opslag og (senere) autoposting. Placeholder for nu.
+            </p>
+          </div>
+        )}
+        {activeTab === 'perf' && (
+          <div>
+            <h3 style={{ marginTop: 0 }}>Performance</h3>
+            <p style={{ color: '#555' }}>
+              Her viser vi KPI-overblik (reach, likes, bedste tidspunkter). Placeholder for nu.
+            </p>
+          </div>
+        )}
+      </section>
+
       {err && <p style={{ color: '#b00' }}>{err}</p>}
-
-      <style jsx>{`
-        /* Layout-ramme */
-        .wrap { display: grid; gap: 16px; }
-
-        /* Én række, tre kolonner: 1fr, 1fr, 2fr */
-        .dashRow {
-          display: grid;
-          gap: 12px;
-          grid-template-columns: 1fr 1fr 2fr;
-          align-items: stretch;
-        }
-
-        /* Min-bredder på de to små kort, så de ikke presses for meget */
-        .dashRow > .card:nth-child(1),
-        .dashRow > .card:nth-child(2) {
-          min-width: 260px;
-        }
-        /* Større minimum på det brede kort */
-        .dashRow > .card-large {
-          min-width: 360px;
-          min-height: 120px;
-        }
-
-        /* Kort-styles */
-        .card {
-          border: 1px solid #eee;
-          border-radius: 12px;
-          padding: 16px;
-          background: #fff;
-          box-shadow: 0 1px 2px rgba(0,0,0,0.03);
-        }
-        .card-title {
-          font-size: 12px;
-          color: #666;
-          margin-bottom: 6px;
-        }
-        .card-big {
-          font-size: clamp(22px, 3.2vw, 28px);
-          font-weight: 700;
-          line-height: 1.1;
-          margin-bottom: 6px;
-        }
-        .card-sub {
-          font-size: clamp(12px, 1.4vw, 13px);
-          color: #555;
-        }
-
-        /* Responsiv opførsel: to kolonner (smalle skærme) */
-        @media (max-width: 1100px) {
-          .dashRow {
-            grid-template-columns: minmax(240px, 1fr) minmax(240px, 1fr);
-          }
-          .dashRow > .card-large {
-            grid-column: 1 / -1; /* brede kort går på ny linje */
-          }
-        }
-
-        /* Én kolonne på meget smalle skærme */
-        @media (max-width: 560px) {
-          .dashRow { grid-template-columns: 1fr; }
-        }
-      `}</style>
     </div>
   );
 }
+
+const cardStyle: React.CSSProperties = {
+  border: '1px solid #eee',
+  borderRadius: 12,
+  padding: 16,
+  background: '#fff',
+  boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+  minWidth: 240, // lille “værn” mod for smalle kort
+};
+
+const cardTitle: React.CSSProperties = {
+  fontSize: 12,
+  color: '#666',
+  marginBottom: 6,
+};
+
+const bigNumber: React.CSSProperties = {
+  fontSize: 28,
+  fontWeight: 700,
+  lineHeight: 1.1,
+  marginBottom: 6,
+};
+
+const subText: React.CSSProperties = {
+  fontSize: 13,
+  color: '#555',
+};
