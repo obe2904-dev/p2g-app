@@ -86,41 +86,61 @@ export default function DashboardPage() {
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       {/* HERO-rækken: 1fr 1fr 2fr */}
-      <section
-        style={{
-          display: 'grid',
-          gap: 12,
-          gridTemplateColumns: '1fr 1fr 2fr',
-          alignItems: 'stretch',
-        }}
-      >
-        {/* Kort 1: Opslag denne måned */}
-        <div style={cardStyle}>
-          <div style={cardTitle}>Opslag denne måned</div>
-          <div style={bigNumber}>
-            {loading ? '—' : counts.postsThisMonth.toLocaleString('da-DK')}
-          </div>
-          <div style={subText}>
-            I alt:{' '}
-            <strong>{loading ? '—' : counts.totalPosts.toLocaleString('da-DK')}</strong>
-          </div>
-        </div>
+      {/* ÉN række – 1fr 1fr 2fr */}
+<section
+  style={{ display:'grid', gap:12, gridTemplateColumns:'1fr 1fr 2fr', alignItems:'stretch' }}
+>
+  {/* Kort 1: Opslag denne måned (uændret) */}
+  <div style={cardStyle}>
+    <div style={cardTitle}>Opslag denne måned</div>
+    <div style={bigNumber}>{loading ? '—' : counts.postsThisMonth.toLocaleString('da-DK')}</div>
+    <div style={subText}>
+      I alt: <strong>{loading ? '—' : counts.totalPosts.toLocaleString('da-DK')}</strong>
+    </div>
+  </div>
 
-        {/* Kort 2: AI denne måned */}
-        <div style={cardStyle}>
-          <div style={cardTitle}>AI denne måned</div>
-          <div style={bigNumber}>{loading ? '—' : aiTotal.toLocaleString('da-DK')}</div>
-          <div style={subText}>
-            Tekst: <strong>{loading ? '—' : counts.aiTextThisMonth}</strong> · Foto:{' '}
-            <strong>{loading ? '—' : counts.aiPhotoThisMonth}</strong>
-          </div>
-        </div>
+  {/* Kort 2: AI denne måned (uændret) */}
+  <div style={cardStyle}>
+    <div style={cardTitle}>AI denne måned</div>
+    <div style={bigNumber}>{loading ? '—' : aiTotal.toLocaleString('da-DK')}</div>
+    <div style={subText}>
+      Tekst: <strong>{loading ? '—' : counts.aiTextThisMonth}</strong> · Foto:{' '}
+      <strong>{loading ? '—' : counts.aiPhotoThisMonth}</strong>
+    </div>
+  </div>
 
-        {/* Kort 3: Dobbelt bredde (pladsholder) */}
-        <div style={{ ...cardStyle, minHeight: 120 }}>
-          {/* Tomt for nu – reserveret til mini-indsigt eller hurtig handling */}
-        </div>
-      </section>
+  {/* Kort 3: Virksomhedsprofil (summary) */}
+  <div style={{ ...cardStyle, display:'grid', gap:8 }}>
+    <div style={cardTitle}>Virksomhedsprofil</div>
+
+    <div style={{ display:'grid', gap:6, fontSize:13 }}>
+      <div><strong>Branche:</strong> {org?.industry || '—'}</div>
+      <div><strong>Services:</strong> {org?.services?.join(', ') || '—'}</div>
+      <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+        <span title="Facebook" style={chipStyle}>
+          Facebook {channels.facebook ? '✓' : '—'}
+        </span>
+        <span title="Instagram" style={chipStyle}>
+          Instagram {channels.instagram ? '✓' : '—'}
+        </span>
+        <span title="Google Business" style={chipStyle}>
+          Google {channels.google ? '✓' : '—'}
+        </span>
+      </div>
+      <div><strong>Adresse:</strong> {org?.address || '—'}</div>
+      <div style={{ overflow:'hidden', textOverflow:'ellipsis' }}>
+        <strong>Web:</strong>{' '}
+        {org?.website ? <a href={org.website} target="_blank" rel="noreferrer">{org.website}</a> : '—'}
+      </div>
+    </div>
+
+    <div style={{ marginTop:6 }}>
+      <a href="/brand" style={{ fontSize:13, textDecoration:'underline' }}>
+        Se / redigér virksomhedsprofil →
+      </a>
+    </div>
+  </div>
+</section>
 
       {/* Faner under hero */}
       <section>
