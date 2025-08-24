@@ -13,7 +13,7 @@ type Counts = {
   aiPhotoThisMonth: number;
 };
 
-type TabKey = 'ai' | 'plan' | 'perf';
+type Tab = 'ai' | 'planning' | 'performance';
 
 export default function DashboardPage() {
   const [counts, setCounts] = useState<Counts>({
@@ -24,9 +24,7 @@ export default function DashboardPage() {
   });
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-
-  // NYT: aktiv fane (default: AI-assistent)
-  const [activeTab, setActiveTab] = useState<TabKey>('ai');
+  const [tab, setTab] = useState<Tab>('ai'); // standard: AI-assistent
 
   useEffect(() => {
     (async () => {
@@ -41,14 +39,13 @@ export default function DashboardPage() {
         monthStart.setHours(0, 0, 0, 0);
         const startISO = monthStart.toISOString();
 
-        // Opslag i alt (KUN publicerede)
+        // KUN publicerede i tællingerne
         const { count: totalPosts } = await supabase
           .from('posts_app')
           .select('id', { count: 'exact', head: true })
           .eq('user_email', email)
           .eq('status', 'published');
 
-        // Opslag denne måned (KUN publicerede)
         const { count: postsThisMonth } = await supabase
           .from('posts_app')
           .select('id', { count: 'exact', head: true })
@@ -56,7 +53,6 @@ export default function DashboardPage() {
           .eq('status', 'published')
           .gte('created_at', startISO);
 
-        // AI-forbrug – tekst
         const { count: aiTextThisMonth } = await supabase
           .from('ai_usage')
           .select('id', { count: 'exact', head: true })
@@ -64,7 +60,6 @@ export default function DashboardPage() {
           .eq('kind', 'text')
           .gte('used_at', startISO);
 
-        // AI-forbrug – foto
         const { count: aiPhotoThisMonth } = await supabase
           .from('ai_usage')
           .select('id', { count: 'exact', head: true })
@@ -88,22 +83,9 @@ export default function DashboardPage() {
 
   const aiTotal = counts.aiTextThisMonth + counts.aiPhotoThisMonth;
 
-  // Små helpers til fane-styles
-  function tabBtnStyle(active: boolean): React.CSSProperties {
-    return {
-      padding: '8px 12px',
-      border: '1px solid #ddd',
-      borderRadius: 8,
-      background: active ? '#111' : '#fff',
-      color: active ? '#fff' : '#111',
-      cursor: 'pointer',
-      fontSize: 14,
-    };
-  }
-
   return (
     <div style={{ display: 'grid', gap: 16 }}>
-      {/* Øverste række med tre kolonner: 1fr, 1fr, 2fr */}
+      {/* HERO-rækken: 1fr 1fr 2fr */}
       <section
         style={{
           display: 'grid',
@@ -136,64 +118,96 @@ export default function DashboardPage() {
 
         {/* Kort 3: Dobbelt bredde (pladsholder) */}
         <div style={{ ...cardStyle, minHeight: 120 }}>
-          {/* Tomt for nu – klar til diagram/indsigt senere */}
+          {/* Tomt for nu – reserveret til mini-indsigt eller hurtig handling */}
         </div>
       </section>
 
-      {/* Faner (dansk) */}
-      <nav style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <button
-          type="button"
-          onClick={() => setActiveTab('ai')}
-          style={tabBtnStyle(activeTab === 'ai')}
-          aria-pressed={activeTab === 'ai'}
-        >
-          AI-assistent
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('plan')}
-          style={tabBtnStyle(activeTab === 'plan')}
-          aria-pressed={activeTab === 'plan'}
-        >
-          Plan & publicering
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('perf')}
-          style={tabBtnStyle(activeTab === 'perf')}
-          aria-pressed={activeTab === 'perf'}
-        >
-          Performance
-        </button>
-      </nav>
+      {/* Faner under hero */}
+      <section>
+        <div style={tabsBar}>
+          <button
+            onClick={() => setTab('ai')}
+            style={{ ...tabBtn, ...(tab === 'ai' ? tabBtnActive : {}) }}
+          >
+            AI-assistent
+          </button>
+          <button
+            onClick={() => setTab('planning')}
+            style={{ ...tabBtn, ...(tab === 'planning' ? tabBtnActive : {}) }}
+          >
+            Planlægning & udgivelse
+          </button>
+          <button
+            onClick={() => setTab('performance')}
+            style={{ ...tabBtn, ...(tab === 'performance' ? tabBtnActive : {}) }}
+          >
+            Performance
+          </button>
+        </div>
 
-      {/* Tab-indhold (placeholder for nu) */}
-      <section style={{ ...cardStyle, minHeight: 220 }}>
-        {activeTab === 'ai' && (
-          <div>
-            <h3 style={{ marginTop: 0 }}>AI-assistent til ideer og tekst</h3>
-            <p style={{ color: '#555' }}>
-              Her kommer idébank, tekstforslag og billed-hjælp (branchetilpasset). Vi fylder det ud i næste step.
-            </p>
-          </div>
-        )}
-        {activeTab === 'plan' && (
-          <div>
-            <h3 style={{ marginTop: 0 }}>Plan & publicering</h3>
-            <p style={{ color: '#555' }}>
-              Her kommer kalenderen, planlagte opslag og (senere) autoposting. Placeholder for nu.
-            </p>
-          </div>
-        )}
-        {activeTab === 'perf' && (
-          <div>
-            <h3 style={{ marginTop: 0 }}>Performance</h3>
-            <p style={{ color: '#555' }}>
-              Her viser vi KPI-overblik (reach, likes, bedste tidspunkter). Placeholder for nu.
-            </p>
-          </div>
-        )}
+        <div style={tabPanel}>
+          {tab === 'ai' && (
+            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '1fr 1fr' }}>
+              <div style={cardStyle}>
+                <div style={cardTitle}>Hurtigt opslag (tekst)</div>
+                <p style={subText}>Skriv et emne. Få 3 forslag. Redigér og gem som opslag.</p>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <input placeholder="Emne (fx 'Dagens kage' eller 'Fredagshygge')" />
+                  <textarea rows={4} placeholder="Valgfrit: kladde eller stikord" />
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <a href="/posts/new">Åbn AI-tekst</a>
+                    <a href="/posts">Gå til Dine opslag</a>
+                  </div>
+                </div>
+              </div>
+
+              <div style={cardStyle}>
+                <div style={cardTitle}>Foto-hjælp</div>
+                <p style={subText}>Upload eller indsæt billede-URL. Få hurtig billedvurdering.</p>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <input placeholder="Indsæt billede-URL (valgfrit)" />
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <a href="/posts/new">Åbn foto-analyse</a>
+                    <a href="/media">Gå til Billeder & video</a>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {tab === 'planning' && (
+            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '1fr 1fr' }}>
+              <div style={cardStyle}>
+                <div style={cardTitle}>Kalender</div>
+                <p style={subText}>Se kommende begivenheder og planlæg opslag.</p>
+                <a href="/calendar">Åbn kalender</a>
+              </div>
+              <div style={cardStyle}>
+                <div style={cardTitle}>Udgivelse</div>
+                <p style={subText}>Manuel publicering i Basic. Autopost i Pro/Premium.</p>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <a href="/posts">Dine opslag</a>
+                  <a href="/posts/new">Nyt opslag</a>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {tab === 'performance' && (
+            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '1fr 1fr' }}>
+              <div style={cardStyle}>
+                <div style={cardTitle}>Overblik (kommende)</div>
+                <p style={subText}>Topopslag, bedste tidspunkt og format (rulles ud med KPI-målinger).</p>
+                <a href="/performance">Åbn Performance</a>
+              </div>
+              <div style={cardStyle}>
+                <div style={cardTitle}>Datakilder</div>
+                <p style={subText}>Facebook/Instagram i Pro+. Make opdaterer KPI dagligt.</p>
+                <a href="/pricing">Se planer</a>
+              </div>
+            </div>
+          )}
+        </div>
       </section>
 
       {err && <p style={{ color: '#b00' }}>{err}</p>}
@@ -207,13 +221,15 @@ const cardStyle: React.CSSProperties = {
   padding: 16,
   background: '#fff',
   boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-  minWidth: 240, // lille “værn” mod for smalle kort
+  minWidth: 240, // lidt minimum så de ikke kollapser for meget på smallere skærme
 };
 
 const cardTitle: React.CSSProperties = {
   fontSize: 12,
   color: '#666',
   marginBottom: 6,
+  textTransform: 'uppercase',
+  letterSpacing: 0.2,
 };
 
 const bigNumber: React.CSSProperties = {
@@ -226,4 +242,38 @@ const bigNumber: React.CSSProperties = {
 const subText: React.CSSProperties = {
   fontSize: 13,
   color: '#555',
+};
+
+// Tabs (enkel, uden frameworks)
+const tabsBar: React.CSSProperties = {
+  display: 'flex',
+  gap: 8,
+  borderBottom: '1px solid #eee',
+};
+
+const tabBtn: React.CSSProperties = {
+  appearance: 'none',
+  background: '#fafafa',
+  border: '1px solid #e5e5e5',
+  borderBottom: 'none',
+  borderTopLeftRadius: 8,
+  borderTopRightRadius: 8,
+  padding: '8px 12px',
+  cursor: 'pointer',
+  fontSize: 14,
+};
+
+const tabBtnActive: React.CSSProperties = {
+  background: '#fff',
+  borderColor: '#ddd',
+  fontWeight: 600,
+};
+
+const tabPanel: React.CSSProperties = {
+  border: '1px solid #eee',
+  borderRadius: 12,
+  borderTopLeftRadius: 0,
+  padding: 12,
+  background: '#fff',
+  marginTop: -1, // så kanten flugter fint med de aktive faner
 };
