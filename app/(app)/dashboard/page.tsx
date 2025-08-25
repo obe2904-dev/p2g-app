@@ -1,7 +1,7 @@
+// app/(app)/dashboard/page.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 export const dynamic = 'force-dynamic';
@@ -11,6 +11,12 @@ type Counts = {
   postsThisMonth: number;
   aiTextThisMonth: number;
   aiPhotoThisMonth: number;
+};
+
+type SuggestionState = {
+  items: string[];
+  loading: boolean;
+  error: string | null;
 };
 
 type Analysis = {
@@ -24,10 +30,8 @@ type Analysis = {
   suggestions: string[];
 } | null;
 
-type TabKey = 'ai' | 'plan' | 'perf';
-
 export default function DashboardPage() {
-  // --------------- HERO-KORT (tællere) ---------------
+  // Hero-kort tal
   const [counts, setCounts] = useState<Counts>({
     totalPosts: 0,
     postsThisMonth: 0,
@@ -35,58 +39,63 @@ export default function DashboardPage() {
     aiPhotoThisMonth: 0,
   });
   const [loadingCounts, setLoadingCounts] = useState(true);
-  const [countsErr, setCountsErr] = useState<string | null>(null);
+  const [errCounts, setErrCounts] = useState<string | null>(null);
 
-  // --------------- TABS ---------------
-  const [activeTab, setActiveTab] = useState<TabKey>('ai');
+  // AI-forslag
+  const [suggest, setSuggest] = useState<SuggestionState>({
+    items: [],
+    loading: false,
+    error: null,
+  });
 
-  // --------------- AI-FORSLAG ---------------
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [loadingSug, setLoadingSug] = useState(false);
-  const [sugErr, setSugErr] = useState<string | null>(null);
+  // Kanal-valg (gem midlertidigt i localStorage)
+  const [useFacebook, setUseFacebook] = useState(true);
+  const [useInstagram, setUseInstagram] = useState(true);
 
-  // --------------- HURTIGT OPSLAG ---------------
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
-  const [tone, setTone] = useState<'neutral' | 'tilbud' | 'informativ' | 'hyggelig'>('neutral');
-  const [saving, setSaving] = useState(false);
-  const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  // Hurtigt opslag
+  const [quickTitle, setQuickTitle] = useState('');
+  const [quickBody, setQuickBody] = useState('');
+  const [quickStatusMsg, setQuickStatusMsg] = useState<string | null>(null);
+  const [aiInstruction, setAiInstruction] = useState('Gør teksten lidt kortere og mere indbydende.');
 
-  // --------------- FOTO-HJÆLP ---------------
+  // Foto-hjælp
   const [imageUrl, setImageUrl] = useState('');
-  const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<Analysis>(null);
+  const [analyzing, setAnalyzing] = useState(false);
 
-  // --------------- VIRKSOMHEDSSNAPSHOT ---------------
-  const [orgName, setOrgName] = useState<string>('');
-  const [website, setWebsite] = useState<string>('');
-  const [city, setCity] = useState<string>('');
-
-  // Month start ISO (memo, så den ikke beregnes for hver render)
-  const startISO = useMemo(() => {
-    const d = new Date();
-    d.setDate(1);
-    d.setHours(0, 0, 0, 0);
-    return d.toISOString();
+  // Load kanal-valg fra localStorage ved mount
+  useEffect(() => {
+    try {
+      const fb = localStorage.getItem('dash_useFacebook');
+      const ig = localStorage.getItem('dash_useInstagram');
+      if (fb !== null) setUseFacebook(fb === '1');
+      if (ig !== null) setUseInstagram(ig === '1');
+    } catch {}
   }, []);
 
-  // Hent tællere (publicerede)
+  // Gem kanal-valg
+  useEffect(() => {
+    try { localStorage.setItem('dash_useFacebook', useFacebook ? '1' : '0'); } catch {}
+  }, [useFacebook]);
+  useEffect(() => {
+    try { localStorage.setItem('dash_useInstagram', useInstagram ? '1' : '0'); } catch {}
+  }, [useInstagram]);
+
+  // Hent hero-kort tal
   useEffect(() => {
     (async () => {
       try {
         setLoadingCounts(true);
         const { data: u } = await supabase.auth.getUser();
         const email = u.user?.email;
-        if (!email) { setCountsErr('Ikke logget ind.'); return; }
+        if (!email) { setErrCounts('Ikke logget ind.'); return; }
 
-        // total publicerede
-        const { count: totalPosts } = await supabase
-          .from('posts_app')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_email', email)
-          .eq('status', 'published');
+        const monthStart = new Date();
+        monthStart.setDate(1);
+        monthStart.setHours(0, 0, 0, 0);
+        const startISO = monthStart.toISOString();
 
-        // publicerede denne måned
+        // Kun publicerede
         const { count: postsThisMonth } = await supabase
           .from('posts_app')
           .select('id', { count: 'exact', head: true })
@@ -94,7 +103,12 @@ export default function DashboardPage() {
           .eq('status', 'published')
           .gte('created_at', startISO);
 
-        // AI tekst denne måned
+        const { count: totalPosts } = await supabase
+          .from('posts_app')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_email', email)
+          .eq('status', 'published');
+
         const { count: aiTextThisMonth } = await supabase
           .from('ai_usage')
           .select('id', { count: 'exact', head: true })
@@ -102,7 +116,6 @@ export default function DashboardPage() {
           .eq('kind', 'text')
           .gte('used_at', startISO);
 
-        // AI foto denne måned
         const { count: aiPhotoThisMonth } = await supabase
           .from('ai_usage')
           .select('id', { count: 'exact', head: true })
@@ -117,196 +130,149 @@ export default function DashboardPage() {
           aiPhotoThisMonth: aiPhotoThisMonth ?? 0,
         });
       } catch (e: any) {
-        setCountsErr(e.message || 'Kunne ikke hente data');
+        setErrCounts(e.message || 'Kunne ikke hente data');
       } finally {
         setLoadingCounts(false);
       }
     })();
-  }, [startISO]);
-
-  // Hent virksomheds-snapshot (defensivt: vi forsøger profiler → org)
-  useEffect(() => {
-    (async () => {
-      try {
-        const { data: prof } = await supabase
-          .from('profiles')
-          .select('full_name, default_org_id')
-          .maybeSingle();
-
-        // forsøg org-navn (hvis vi har lavet en org-tabel – hvis ikke, viser vi bare website senere)
-        let org = '';
-        if (prof?.default_org_id) {
-          const { data: orgRow } = await supabase
-            .from('organizations')
-            .select('name, city, website')
-            .eq('id', prof.default_org_id)
-            .maybeSingle();
-          if (orgRow?.name) org = orgRow.name;
-          if (orgRow?.website) setWebsite(orgRow.website);
-          if (orgRow?.city) setCity(orgRow.city);
-        }
-        setOrgName(org || 'Din virksomhed');
-
-        // fallback: prøv evt. at finde website i en “brand”-tabel hvis den findes
-        if (!website) {
-          const { data: brand } = await supabase
-            .from('brand_sources')
-            .select('origin')
-            .eq('kind', 'website')
-            .limit(1);
-          if (brand && brand[0]?.origin) setWebsite(brand[0].origin);
-        }
-      } catch {
-        // ingen fejlvisning her – kortet har “—” fallback
-      }
-    })();
-  }, []); // kør én gang
-
-  // Første AI-forslag (så der er noget at kigge på)
-  useEffect(() => {
-    refreshSuggestions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function refreshSuggestions() {
-    setSugErr(null);
-    setLoadingSug(true);
-    try {
-      const { data: s } = await supabase.auth.getSession();
-      const token = s.session?.access_token;
-      if (!token) throw new Error('Ikke logget ind');
+  const aiTotal = counts.aiTextThisMonth + counts.aiPhotoThisMonth;
 
-      // En neutral “idé”-prompt (kan tilpasses pr. branche senere)
+  async function fetchSuggestions() {
+    setSuggest(s => ({ ...s, loading: true, error: null }));
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) { setSuggest({ items: [], loading: false, error: 'Ikke logget ind.' }); return; }
+
+      // Brug kanaler som kontekst i emnet (topic), så vi kan specialisere senere
+      const channels: string[] = [
+        ...(useFacebook ? ['facebook'] : []),
+        ...(useInstagram ? ['instagram'] : []),
+      ];
+      const topic = channels.length ? `Lav forslag egnet til: ${channels.join(' & ')}` : 'Lav forslag';
+
       const resp = await fetch('/api/ai/suggest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({
-          topic: 'Idéer til opslag for en lokal virksomhed',
-          tone: 'neutral'
-        })
+        body: JSON.stringify({ topic })
       });
 
+      if (resp.status === 402) {
+        setSuggest({ items: [], loading: false, error: 'Din AI-tekst-kvote for denne måned er opbrugt.' });
+        return;
+      }
       if (!resp.ok) {
         const t = await resp.text();
-        throw new Error(t || 'AI-fejl');
+        setSuggest({ items: [], loading: false, error: 'Fejl: ' + t });
+        return;
       }
+
       const data = await resp.json();
-      const arr = Array.isArray(data.suggestions) ? data.suggestions.slice(0, 3) : [];
-      setSuggestions(arr);
+      const items: string[] = Array.isArray(data.suggestions) ? data.suggestions.slice(0, 3) : [];
+      setSuggest({ items, loading: false, error: null });
     } catch (e: any) {
-      setSugErr(e.message || 'Kunne ikke hente forslag');
-      setSuggestions([]);
-    } finally {
-      setLoadingSug(false);
+      setSuggest({ items: [], loading: false, error: e.message || 'Uventet fejl' });
     }
   }
 
   function pickSuggestion(s: string) {
-    setBody(s);
-    // scroll ned til “Hurtigt opslag”
-    const el = document.getElementById('quick-post');
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Læg forslaget ned i “Hurtigt opslag”
+    if (!quickBody.trim()) {
+      setQuickBody(s);
+    } else {
+      // Hvis der allerede står noget, tilføj en tom linje + forslaget
+      setQuickBody(prev => (prev ? prev + '\n\n' + s : s));
+    }
+    // Scroll blidt til Hurtigt opslag
+    try {
+      document.getElementById('quick-post')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch {}
   }
 
-  async function improveWithAI() {
+  async function aiRewrite() {
+    if (!quickBody.trim()) { setQuickStatusMsg('Skriv eller vælg først en tekst.'); return; }
+    setQuickStatusMsg('Foreslår variation…');
+
     try {
-      if (!body.trim()) { setStatusMsg('Skriv eller vælg først noget tekst.'); return; }
-      setStatusMsg('Forbedrer tekst…');
-      const { data: s } = await supabase.auth.getSession();
-      const token = s.session?.access_token;
-      if (!token) { setStatusMsg('Ikke logget ind.'); return; }
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) { setQuickStatusMsg('Ikke logget ind.'); return; }
 
-      const toneKey =
-        tone === 'tilbud' ? 'tilbud' :
-        tone === 'informativ' ? 'informativ' :
-        tone === 'hyggelig' ? 'hyggelig' : 'neutral';
-
-      const r = await fetch('/api/ai/suggest', {
+      // Genbrug /api/ai/suggest til at få 1–3 variationer – vælg #1
+      const resp = await fetch('/api/ai/suggest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({ post_body: body, tone: toneKey })
+        body: JSON.stringify({ topic: aiInstruction, post_body: quickBody })
       });
-      if (!r.ok) { setStatusMsg('AI-fejl: ' + (await r.text())); return; }
-      const data = await r.json();
-      const first = Array.isArray(data.suggestions) && data.suggestions[0] ? String(data.suggestions[0]) : '';
-      if (first) {
-        setBody(first);
-        setStatusMsg('Opdateret med AI ✔');
-      } else {
-        setStatusMsg('AI gav ikke et brugbart svar. Prøv igen.');
-      }
+
+      if (resp.status === 402) { setQuickStatusMsg('Din AI-tekst-kvote er opbrugt.'); return; }
+      if (!resp.ok) { setQuickStatusMsg('Fejl: ' + (await resp.text())); return; }
+
+      const data = await resp.json();
+      const items: string[] = Array.isArray(data.suggestions) ? data.suggestions : [];
+      if (!items.length) { setQuickStatusMsg('Ingen variation modtaget.'); return; }
+
+      setQuickBody(items[0]);
+      setQuickStatusMsg('Opdateret ✔');
     } catch (e: any) {
-      setStatusMsg('Fejl: ' + e.message);
+      setQuickStatusMsg('Fejl: ' + e.message);
     }
   }
 
   async function saveDraft() {
-    setStatusMsg('Gemmer…'); setSaving(true);
+    if (!quickBody.trim()) { setQuickStatusMsg('Skriv en tekst først.'); return; }
+    setQuickStatusMsg('Gemmer kladde…');
+
     try {
-      const { data: s } = await supabase.auth.getSession();
-      const token = s.session?.access_token;
-      if (!token) { setStatusMsg('Ikke logget ind.'); return; }
-      const r = await fetch('/api/posts/create', {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) { setQuickStatusMsg('Ikke logget ind.'); return; }
+
+      const resp = await fetch('/api/posts/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({ title, body, image_url: imageUrl })
+        body: JSON.stringify({
+          title: quickTitle || null,
+          body: quickBody,
+          image_url: imageUrl || null,
+          // (status sættes til udkast i API'et – hvis ikke, kan vi sende 'draft' her)
+        })
       });
-      if (!r.ok) { setStatusMsg('Fejl: ' + (await r.text())); return; }
-      setStatusMsg('Gemt som udkast ✔');
-      // nulstil felter let, men behold titel hvis man vil fortsætte
-      setBody('');
-      setAnalysis(null);
-      // (behold evt. imageUrl – op til dig. Jeg lader den stå.)
-    } catch (e: any) {
-      setStatusMsg('Fejl: ' + e.message);
-    } finally {
-      setSaving(false);
-    }
-  }
 
-  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setStatusMsg('Uploader billede…');
-    try {
-      const { data: userData } = await supabase.auth.getUser();
-      const uid = userData.user?.id;
-      if (!uid) { setStatusMsg('Ikke logget ind.'); return; }
-      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-      const path = `${uid}/${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage.from('images').upload(path, file, { cacheControl: '3600', upsert: false });
-      if (upErr) { setStatusMsg('Upload-fejl: ' + upErr.message); return; }
-      const { data: pub } = supabase.storage.from('images').getPublicUrl(path);
-      setImageUrl(pub.publicUrl);
-      setStatusMsg('Billede uploadet ✔');
+      if (!resp.ok) { setQuickStatusMsg('Fejl: ' + (await resp.text())); return; }
+      setQuickStatusMsg('Kladde gemt ✔');
+      // Nulstil tekstfelter? Vi lader dem stå, så brugeren kan arbejde videre.
     } catch (e: any) {
-      setStatusMsg('Fejl: ' + e.message);
+      setQuickStatusMsg('Fejl: ' + e.message);
     }
   }
 
   async function analyzePhoto() {
-    if (!imageUrl) { setStatusMsg('Tilføj eller upload et billede først.'); return; }
-    setAnalyzing(true); setAnalysis(null); setStatusMsg(null);
+    if (!imageUrl.trim()) { setQuickStatusMsg('Indsæt et billede-link først.'); return; }
+    setQuickStatusMsg(null);
+    setAnalysis(null);
+    setAnalyzing(true);
+
     try {
       const resp = await fetch('/api/media/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image_url: imageUrl })
       });
-      if (!resp.ok) { setStatusMsg('Analyse-fejl: ' + (await resp.text())); }
-      else { setAnalysis(await resp.json()); }
+      if (!resp.ok) { setQuickStatusMsg('Analyse-fejl: ' + (await resp.text())); return; }
+      setAnalysis(await resp.json());
     } catch (e: any) {
-      setStatusMsg('Analyse-fejl: ' + e.message);
+      setQuickStatusMsg('Analyse-fejl: ' + e.message);
     } finally {
       setAnalyzing(false);
     }
   }
 
-  const aiTotal = counts.aiTextThisMonth + counts.aiPhotoThisMonth;
-
   return (
     <div style={{ display: 'grid', gap: 16 }}>
-      {/* ØVERSTE RÆKKE: 3 kort i én linje */}
+      {/* Øverste række — tre kort på én linje */}
       <section
         style={{
           display: 'grid',
@@ -315,7 +281,7 @@ export default function DashboardPage() {
           alignItems: 'stretch',
         }}
       >
-        {/* Kort 1: Opslag denne måned */}
+        {/* Kort 1: Opslag denne måned + i alt */}
         <div style={cardStyle}>
           <div style={cardTitle}>Opslag denne måned</div>
           <div style={bigNumber}>
@@ -336,159 +302,153 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Kort 3: Virksomhedsprofil (snapshot) */}
-        <div style={{ ...cardStyle, display: 'grid', gap: 6 }}>
-          <div style={cardTitle}>Virksomhedsprofil</div>
-          <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>{orgName || 'Din virksomhed'}</div>
-          <div style={{ fontSize: 13, color: '#555' }}>
-            {city ? `By: ${city}` : 'By: —'}
-          </div>
-          <div style={{ fontSize: 13, color: '#555' }}>
-            Hjemmeside: {website ? <a href={website} target="_blank" rel="noreferrer">{website}</a> : '—'}
-          </div>
-          <div style={{ fontSize: 13, color: '#555' }}>
-            Kanaler: Facebook <span style={{ opacity: 0.6 }}>(snart)</span> · Instagram <span style={{ opacity: 0.6 }}>(snart)</span>
-          </div>
-          <div style={{ marginTop: 6 }}>
-            <Link href="/brand" style={pillLink}>Se profil →</Link>
-          </div>
+        {/* Kort 3: Dobbelt bredde (pladsholder til senere diagram/indsigt) */}
+        <div style={{ ...cardStyle, minHeight: 120 }}>
+          {/* Tomt for nu */}
         </div>
       </section>
 
-      {countsErr && <p style={{ color: '#b00' }}>{countsErr}</p>}
+      {errCounts && <p style={{ color: '#b00' }}>{errCounts}</p>}
 
-      {/* TABS */}
-      <nav style={tabsBar}>
-        <button
-          onClick={() => setActiveTab('ai')}
-          style={activeTab === 'ai' ? tabActive : tabBtn}
-        >
-          AI Assistent
-        </button>
-        <button
-          onClick={() => setActiveTab('plan')}
-          style={activeTab === 'plan' ? tabActive : tabBtn}
-        >
-          Planlæg & udgiv
-        </button>
-        <button
-          onClick={() => setActiveTab('perf')}
-          style={activeTab === 'perf' ? tabActive : tabBtn}
-        >
-          Performance
-        </button>
-      </nav>
+      {/* AI Assistent — Forslag (3 kort) */}
+      <section style={{ ...cardStyle }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+          <h3 style={{ margin: 0, fontSize: 16 }}>AI forslag</h3>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center' }}>
+            <label style={checkLabel}>
+              <input
+                type="checkbox"
+                checked={useFacebook}
+                onChange={e => setUseFacebook(e.target.checked)}
+              />
+              Facebook
+            </label>
+            <label style={checkLabel}>
+              <input
+                type="checkbox"
+                checked={useInstagram}
+                onChange={e => setUseInstagram(e.target.checked)}
+              />
+              Instagram
+            </label>
+            <button onClick={fetchSuggestions} disabled={suggest.loading}>
+              {suggest.loading ? 'Henter…' : 'Få 3 nye'}
+            </button>
+          </div>
+        </div>
 
-      {/* INDHOLD UNDER TABS */}
-      {activeTab === 'ai' && (
-        <section style={{ display: 'grid', gap: 16 }}>
-          {/* AI-forslag (3 kort) + “Få 3 nye” */}
-          <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', gap: 12, flex: '1 1 auto', minWidth: 260 }}>
-              { [0,1,2].map((i) => (
-                <div key={i} style={{ ...cardStyle, flex: '1 1 0', minWidth: 260, display: 'grid', gridTemplateRows: '1fr auto', gap: 8 }}>
-                  <div style={{ whiteSpace: 'pre-wrap', fontSize: 14 }}>
-                    {loadingSug ? 'Henter…' : (suggestions[i] || '—')}
-                  </div>
-                  <div>
-                    <button
-                      disabled={!suggestions[i]}
-                      onClick={() => suggestions[i] && pickSuggestion(suggestions[i])}
-                      style={{ width: '100%' }}
-                    >
-                      Brug dette
-                    </button>
-                  </div>
-                </div>
-              )) }
-            </div>
-            <div>
-              <button onClick={refreshSuggestions} disabled={loadingSug}>
-                {loadingSug ? 'Henter…' : 'Få 3 nye'}
+        {suggest.error && <p style={{ color: '#b00', marginTop: 4 }}>{suggest.error}</p>}
+
+        <div
+          style={{
+            display: 'grid',
+            gap: 12,
+            gridTemplateColumns: 'repeat(3, minmax(220px, 1fr))',
+          }}
+        >
+          {(suggest.items.length ? suggest.items : [null, null, null]).map((s, i) => (
+            <button
+              key={i}
+              onClick={() => s && pickSuggestion(s)}
+              disabled={!s}
+              title={s || 'Klik “Få 3 nye” for at hente forslag'}
+              style={{
+                textAlign: 'left',
+                border: '1px solid #eee',
+                borderRadius: 12,
+                background: s ? '#fff' : '#fafafa',
+                padding: 12,
+                cursor: s ? 'pointer' : 'default',
+                minHeight: 96,
+              }}
+            >
+              <div style={{ fontSize: 12, color: '#666', marginBottom: 6 }}>
+                Forslag {i + 1}
+              </div>
+              <div style={{ fontSize: 14, whiteSpace: 'pre-wrap' }}>
+                {s || '—'}
+              </div>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {/* Hurtigt opslag (+ AI-variation) */}
+      <section id="quick-post" style={{ ...cardStyle }}>
+        <h3 style={{ marginTop: 0, fontSize: 16 }}>Hurtigt opslag</h3>
+
+        <div style={{ display: 'grid', gap: 8, maxWidth: 720 }}>
+          <label>Titel (valgfri)</label>
+          <input value={quickTitle} onChange={e => setQuickTitle(e.target.value)} />
+
+          <label>Tekst</label>
+          <textarea
+            rows={6}
+            value={quickBody}
+            onChange={e => setQuickBody(e.target.value)}
+            placeholder="Vælg et AI-forslag ovenfor eller skriv selv…"
+          />
+
+          {/* Mini AI-assistent */}
+          <div
+            style={{
+              display: 'grid',
+              gap: 8,
+              gridTemplateColumns: '1fr auto',
+              alignItems: 'center',
+              marginTop: 4,
+            }}
+          >
+            <input
+              value={aiInstruction}
+              onChange={e => setAiInstruction(e.target.value)}
+              placeholder="Fx: kortere, mere salg, mere hyggelig, tilføj hashtag…"
+            />
+            <button type="button" onClick={aiRewrite}>Foreslå variation</button>
+          </div>
+
+          {/* Foto-hjælp flyttet herunder */}
+          <div style={{ marginTop: 8 }}>
+            <label>Billede-URL (valgfri)</label>
+            <input
+              value={imageUrl}
+              onChange={e => setImageUrl(e.target.value)}
+              placeholder="https://…"
+            />
+            <div style={{ marginTop: 8 }}>
+              <button type="button" onClick={analyzePhoto} disabled={!imageUrl || analyzing}>
+                {analyzing ? 'Analyserer…' : 'Analyser billede'}
               </button>
-              {sugErr && <div style={{ color: '#b00', marginTop: 6 }}>{sugErr}</div>}
             </div>
+
+            {analysis && (
+              <div style={{ marginTop: 12, padding: 12, border: '1px solid #ddd', borderRadius: 8 }}>
+                <h4 style={{ marginTop: 0 }}>Foto-feedback</h4>
+                <p><strong>Størrelse:</strong> {analysis.width}×{analysis.height} ({analysis.aspect_label})</p>
+                <p>
+                  <strong>Lys (0-255):</strong> {analysis.brightness} — <strong>Kontrast:</strong> {analysis.contrast} — <strong>Skarphed:</strong> {analysis.sharpness}
+                </p>
+                <p><strong>Vurdering:</strong> {analysis.verdict}</p>
+                <ul>
+                  {analysis.suggestions.map((s, i) => <li key={i}>{s}</li>)}
+                </ul>
+              </div>
+            )}
           </div>
 
-          {/* Hurtigt opslag + Mini AI-assistent + Foto-hjælp */}
-          <div id="quick-post" style={{ display: 'grid', gap: 16 }}>
-            {/* Hurtigt opslag */}
-            <div style={cardStyle}>
-              <div style={cardTitle}>Hurtigt opslag</div>
-              <div style={{ display: 'grid', gap: 8, maxWidth: 720 }}>
-                <label style={labelStyle}>Titel (valgfri)</label>
-                <input value={title} onChange={e=>setTitle(e.target.value)} />
-
-                <label style={labelStyle}>Tekst</label>
-                <textarea rows={6} value={body} onChange={e=>setBody(e.target.value)} placeholder="Sæt et AI-forslag ind eller skriv selv…" />
-
-                {/* Mini AI-assistent (forbedr tekst) */}
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 12, color: '#666' }}>Tone:</span>
-                  <select value={tone} onChange={e=>setTone(e.target.value as any)}>
-                    <option value="neutral">Neutral/Venlig</option>
-                    <option value="tilbud">Tilbud</option>
-                    <option value="informativ">Informativ</option>
-                    <option value="hyggelig">Hyggelig</option>
-                  </select>
-                  <button type="button" onClick={improveWithAI}>Forbedr med AI</button>
-                  <button type="button" onClick={saveDraft} disabled={saving}>{saving ? 'Gemmer…' : 'Gem som udkast'}</button>
-                  <Link href="/posts" style={pillLink}>Gå til dine opslag →</Link>
-                </div>
-              </div>
-            </div>
-
-            {/* Foto-hjælp */}
-            <div style={cardStyle}>
-              <div style={cardTitle}>Foto-hjælp</div>
-              <div style={{ display: 'grid', gap: 8, maxWidth: 720 }}>
-                <label style={labelStyle}>Billede-URL (valgfri)</label>
-                <input value={imageUrl} onChange={e=>setImageUrl(e.target.value)} placeholder="https://..." />
-                <label style={labelStyle}>Upload billede (valgfri)</label>
-                <input type="file" accept="image/*" onChange={handleFile} />
-
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button type="button" onClick={analyzePhoto} disabled={!imageUrl || analyzing}>
-                    {analyzing ? 'Analyserer…' : 'Analyser billede'}
-                  </button>
-                </div>
-
-                {analysis && (
-                  <section style={{ marginTop: 6, padding: 10, border: '1px solid #eee', borderRadius: 8 }}>
-                    <div style={{ fontWeight: 600, marginBottom: 6 }}>Foto-feedback</div>
-                    <p><strong>Størrelse:</strong> {analysis.width}×{analysis.height} ({analysis.aspect_label})</p>
-                    <p><strong>Lys (0-255):</strong> {analysis.brightness} — <strong>Kontrast:</strong> {analysis.contrast} — <strong>Skarphed:</strong> {analysis.sharpness}</p>
-                    <p><strong>Vurdering:</strong> {analysis.verdict}</p>
-                    <ul>
-                      {analysis.suggestions.map((s, i) => <li key={i}>{s}</li>)}
-                    </ul>
-                  </section>
-                )}
-              </div>
-            </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+            <button type="button" onClick={saveDraft}>Gem som kladde</button>
+            <a href="/posts">Gå til dine opslag</a>
           </div>
 
-          {statusMsg && <p style={{ color: statusMsg.startsWith('Fejl') ? '#b00' : '#222' }}>{statusMsg}</p>}
-        </section>
-      )}
-
-      {activeTab === 'plan' && (
-        <section style={{ ...cardStyle, minHeight: 180 }}>
-          (Planlæg & udgiv) – Kommer snart. Her viser vi kalender/planlægning.
-        </section>
-      )}
-
-      {activeTab === 'perf' && (
-        <section style={{ ...cardStyle, minHeight: 180 }}>
-          (Performance) – Kommer snart. Her viser vi topopslag / tider / kanaler.
-        </section>
-      )}
+          {quickStatusMsg && <p style={{ marginTop: 6 }}>{quickStatusMsg}</p>}
+        </div>
+      </section>
     </div>
   );
 }
 
-/* ---------- STYLES (inline, genbrugelige) ---------- */
-
+/* ——— Stilarter (samme visuelle sprog som hidtil) ——— */
 const cardStyle: React.CSSProperties = {
   border: '1px solid #eee',
   borderRadius: 12,
@@ -515,40 +475,9 @@ const subText: React.CSSProperties = {
   color: '#555',
 };
 
-const labelStyle: React.CSSProperties = {
-  fontSize: 12,
-  color: '#666',
-};
-
-const pillLink: React.CSSProperties = {
-  display: 'inline-block',
-  fontSize: 12,
-  border: '1px solid #ddd',
-  borderRadius: 999,
-  padding: '4px 10px',
-  background: '#fafafa',
-  textDecoration: 'none',
-  color: 'inherit'
-};
-
-const tabsBar: React.CSSProperties = {
-  display: 'flex',
-  gap: 8,
-  borderBottom: '1px solid #eee',
-  paddingBottom: 6,
-};
-
-const tabBtn: React.CSSProperties = {
-  padding: '8px 12px',
-  border: '1px solid #eee',
-  background: '#fff',
-  borderRadius: 999,
-  cursor: 'pointer',
-};
-
-const tabActive: React.CSSProperties = {
-  ...tabBtn,
-  background: '#111',
-  color: '#fff',
-  borderColor: '#111',
+const checkLabel: React.CSSProperties = {
+  display: 'inline-flex',
+  gap: 6,
+  alignItems: 'center',
+  fontSize: 13,
 };
