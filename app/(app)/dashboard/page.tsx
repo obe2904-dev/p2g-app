@@ -45,6 +45,17 @@ export default function DashboardPage() {
   const [loadingSug, setLoadingSug] = useState(false);
   const [sugErr, setSugErr] = useState<string | null>(null);
 
+  // NEW: Kanal-valg til forslag
+  const [channelFacebook, setChannelFacebook] = useState(true);
+  const [channelInstagram, setChannelInstagram] = useState(true);
+
+  const channelNote = useMemo(() => {
+    const arr: string[] = [];
+    if (channelFacebook) arr.push('Facebook');
+    if (channelInstagram) arr.push('Instagram');
+    return arr.length ? `Kanaler: ${arr.join(', ')}` : 'Kanaler: (ingen valgt)';
+  }, [channelFacebook, channelInstagram]);
+
   // --------------- HURTIGT OPSLAG ---------------
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -124,7 +135,7 @@ export default function DashboardPage() {
     })();
   }, [startISO]);
 
-  // Hent virksomheds-snapshot (defensivt: vi forsøger profiler → org)
+  // Hent virksomheds-snapshot
   useEffect(() => {
     (async () => {
       try {
@@ -133,7 +144,6 @@ export default function DashboardPage() {
           .select('full_name, default_org_id')
           .maybeSingle();
 
-        // forsøg org-navn (hvis vi har lavet en org-tabel – hvis ikke, viser vi bare website senere)
         let org = '';
         if (prof?.default_org_id) {
           const { data: orgRow } = await supabase
@@ -147,7 +157,6 @@ export default function DashboardPage() {
         }
         setOrgName(org || 'Din virksomhed');
 
-        // fallback: prøv evt. at finde website i en “brand”-tabel hvis den findes
         if (!website) {
           const { data: brand } = await supabase
             .from('brand_sources')
@@ -157,7 +166,7 @@ export default function DashboardPage() {
           if (brand && brand[0]?.origin) setWebsite(brand[0].origin);
         }
       } catch {
-        // ingen fejlvisning her – kortet har “—” fallback
+        // stille fallback
       }
     })();
   }, []); // kør én gang
@@ -176,12 +185,15 @@ export default function DashboardPage() {
       const token = s.session?.access_token;
       if (!token) throw new Error('Ikke logget ind');
 
-      // En neutral “idé”-prompt (kan tilpasses pr. branche senere)
+      // Byg topic inkl. valgte kanaler (ingen backend-ændringer nødvendige)
+      const topicBase = 'Idéer til opslag for en lokal virksomhed';
+      const topic = `${topicBase}. ${channelNote}`;
+
       const resp = await fetch('/api/ai/suggest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
         body: JSON.stringify({
-          topic: 'Idéer til opslag for en lokal virksomhed',
+          topic,
           tone: 'neutral'
         })
       });
@@ -193,6 +205,12 @@ export default function DashboardPage() {
       const data = await resp.json();
       const arr = Array.isArray(data.suggestions) ? data.suggestions.slice(0, 3) : [];
       setSuggestions(arr);
+
+      // Lokal tæller +1 for "AI tekst" (backend logger i ai_usage i forvejen)
+      setCounts(prev => ({
+        ...prev,
+        aiTextThisMonth: (prev.aiTextThisMonth ?? 0) + 1,
+      }));
     } catch (e: any) {
       setSugErr(e.message || 'Kunne ikke hente forslag');
       setSuggestions([]);
@@ -203,7 +221,6 @@ export default function DashboardPage() {
 
   function pickSuggestion(s: string) {
     setBody(s);
-    // scroll ned til “Hurtigt opslag”
     const el = document.getElementById('quick-post');
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -253,10 +270,8 @@ export default function DashboardPage() {
       });
       if (!r.ok) { setStatusMsg('Fejl: ' + (await r.text())); return; }
       setStatusMsg('Gemt som udkast ✔');
-      // nulstil felter let, men behold titel hvis man vil fortsætte
       setBody('');
       setAnalysis(null);
-      // (behold evt. imageUrl – op til dig. Jeg lader den stå.)
     } catch (e: any) {
       setStatusMsg('Fejl: ' + e.message);
     } finally {
@@ -382,11 +397,21 @@ export default function DashboardPage() {
       {/* INDHOLD UNDER TABS */}
       {activeTab === 'ai' && (
         <section style={{ display: 'grid', gap: 16 }}>
-          {/* AI-forslag (3 kort) + “Få 3 nye” */}
+          {/* AI-forslag (3 kort) + “Få 3 nye” + kanalvalg */}
           <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', gap: 12, flex: '1 1 auto', minWidth: 260 }}>
-              { [0,1,2].map((i) => (
-                <div key={i} style={{ ...cardStyle, flex: '1 1 0', minWidth: 260, display: 'grid', gridTemplateRows: '1fr auto', gap: 8 }}>
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  style={{
+                    ...cardStyle,
+                    flex: '1 1 0',
+                    minWidth: 260,
+                    display: 'grid',
+                    gridTemplateRows: '1fr auto',
+                    gap: 8
+                  }}
+                >
                   <div style={{ whiteSpace: 'pre-wrap', fontSize: 14 }}>
                     {loadingSug ? 'Henter…' : (suggestions[i] || '—')}
                   </div>
@@ -400,12 +425,33 @@ export default function DashboardPage() {
                     </button>
                   </div>
                 </div>
-              )) }
+              ))}
             </div>
-            <div>
+
+            {/* Højre kolonne: Få 3 nye + kanalvalg */}
+            <div style={{ display: 'grid', gap: 8, alignContent: 'start', minWidth: 200 }}>
               <button onClick={refreshSuggestions} disabled={loadingSug}>
                 {loadingSug ? 'Henter…' : 'Få 3 nye'}
               </button>
+
+              <div style={{ fontSize: 12, color: '#666' }}>Kanaler for nye forslag:</div>
+              <label style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={channelFacebook}
+                  onChange={e => setChannelFacebook(e.target.checked)}
+                />
+                Facebook
+              </label>
+              <label style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={channelInstagram}
+                  onChange={e => setChannelInstagram(e.target.checked)}
+                />
+                Instagram
+              </label>
+
               {sugErr && <div style={{ color: '#b00', marginTop: 6 }}>{sugErr}</div>}
             </div>
           </div>
@@ -417,22 +463,29 @@ export default function DashboardPage() {
               <div style={cardTitle}>Hurtigt opslag</div>
               <div style={{ display: 'grid', gap: 8, maxWidth: 720 }}>
                 <label style={labelStyle}>Titel (valgfri)</label>
-                <input value={title} onChange={e=>setTitle(e.target.value)} />
+                <input value={title} onChange={e => setTitle(e.target.value)} />
 
                 <label style={labelStyle}>Tekst</label>
-                <textarea rows={6} value={body} onChange={e=>setBody(e.target.value)} placeholder="Sæt et AI-forslag ind eller skriv selv…" />
+                <textarea
+                  rows={6}
+                  value={body}
+                  onChange={e => setBody(e.target.value)}
+                  placeholder="Sæt et AI-forslag ind eller skriv selv…"
+                />
 
                 {/* Mini AI-assistent (forbedr tekst) */}
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 12, color: '#666' }}>Tone:</span>
-                  <select value={tone} onChange={e=>setTone(e.target.value as any)}>
+                  <select value={tone} onChange={e => setTone(e.target.value as any)}>
                     <option value="neutral">Neutral/Venlig</option>
                     <option value="tilbud">Tilbud</option>
                     <option value="informativ">Informativ</option>
                     <option value="hyggelig">Hyggelig</option>
                   </select>
                   <button type="button" onClick={improveWithAI}>Forbedr med AI</button>
-                  <button type="button" onClick={saveDraft} disabled={saving}>{saving ? 'Gemmer…' : 'Gem som udkast'}</button>
+                  <button type="button" onClick={saveDraft} disabled={saving}>
+                    {saving ? 'Gemmer…' : 'Gem som udkast'}
+                  </button>
                   <Link href="/posts" style={pillLink}>Gå til dine opslag →</Link>
                 </div>
               </div>
@@ -443,7 +496,7 @@ export default function DashboardPage() {
               <div style={cardTitle}>Foto-hjælp</div>
               <div style={{ display: 'grid', gap: 8, maxWidth: 720 }}>
                 <label style={labelStyle}>Billede-URL (valgfri)</label>
-                <input value={imageUrl} onChange={e=>setImageUrl(e.target.value)} placeholder="https://..." />
+                <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://..." />
                 <label style={labelStyle}>Upload billede (valgfri)</label>
                 <input type="file" accept="image/*" onChange={handleFile} />
 
