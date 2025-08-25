@@ -73,7 +73,7 @@ export default function AppSidebar() {
         <NavItem href="/brand" label="Virksomhedsprofil" currentPath={pathname} />
         <NavItem href="/calendar" label="Kalender" currentPath={pathname} />
         <NavItem href="/posts" label="Opslag" currentPath={pathname} />
-        <NavItem href="/gallery" label="Billeder og video" currentPath={pathname} />
+        <NavItem href="/gallery" label="Foto og video" currentPath={pathname} />
         {showUpgrade && (
           <NavItem href="/pricing" label="Opgradér" currentPath={pathname} />
         )}
