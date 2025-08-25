@@ -27,7 +27,7 @@ type Analysis = {
 type TabKey = 'ai' | 'plan' | 'perf';
 
 export default function DashboardPage() {
-  // --------------- HERO-KORT (tællere) ---------------
+  // ---------- HERO-KORT ----------
   const [counts, setCounts] = useState<Counts>({
     totalPosts: 0,
     postsThisMonth: 0,
@@ -37,36 +37,39 @@ export default function DashboardPage() {
   const [loadingCounts, setLoadingCounts] = useState(true);
   const [countsErr, setCountsErr] = useState<string | null>(null);
 
-  // --------------- TABS ---------------
+  // ---------- TABS ----------
   const [activeTab, setActiveTab] = useState<TabKey>('ai');
 
-  // --------------- AI-FORSLAG ---------------
+  // ---------- AI-FORSLAG ----------
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [loadingSug, setLoadingSug] = useState(false);
   const [sugErr, setSugErr] = useState<string | null>(null);
+  const [sugChanFB, setSugChanFB] = useState(true);
+  const [sugChanIG, setSugChanIG] = useState(true);
 
-  // NYT: kanalvalg til forslag
-  const [useFacebook, setUseFacebook] = useState(true);
-  const [useInstagram, setUseInstagram] = useState(true);
-
-  // --------------- HURTIGT OPSLAG ---------------
+  // ---------- HURTIGT OPSLAG ----------
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
-  const [tone, setTone] = useState<'neutral' | 'tilbud' | 'informativ' | 'hyggelig'>('neutral');
+  const [tone, setTone] =
+    useState<'neutral' | 'tilbud' | 'informativ' | 'hyggelig'>('neutral');
   const [saving, setSaving] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [quickImageUrl, setQuickImageUrl] = useState<string>(''); // fra Foto-hjælp
 
-  // --------------- FOTO-HJÆLP ---------------
-  const [imageUrl, setImageUrl] = useState('');
+  // ---------- FOTO-HJÆLP ----------
+  const [imageUrl, setImageUrl] = useState(''); // upload-resultat
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<Analysis>(null);
+  const [photoChanFB, setPhotoChanFB] = useState(true);
+  const [photoChanIG, setPhotoChanIG] = useState(true);
+  const [uploadBusy, setUploadBusy] = useState(false);
 
-  // --------------- VIRKSOMHEDSSNAPSHOT ---------------
+  // ---------- VIRKSOMHEDSSNAPSHOT ----------
   const [orgName, setOrgName] = useState<string>('');
   const [website, setWebsite] = useState<string>('');
   const [city, setCity] = useState<string>('');
 
-  // Month start ISO
+  // Month start
   const startISO = useMemo(() => {
     const d = new Date();
     d.setDate(1);
@@ -74,7 +77,7 @@ export default function DashboardPage() {
     return d.toISOString();
   }, []);
 
-  // Hent tællere (publicerede)
+  // Hent tællere
   useEffect(() => {
     (async () => {
       try {
@@ -124,7 +127,7 @@ export default function DashboardPage() {
     })();
   }, [startISO]);
 
-  // Hent virksomheds-snapshot
+  // Snapshot org
   useEffect(() => {
     (async () => {
       try {
@@ -133,18 +136,17 @@ export default function DashboardPage() {
           .select('full_name, default_org_id')
           .maybeSingle();
 
-        let org = '';
         if (prof?.default_org_id) {
           const { data: orgRow } = await supabase
             .from('organizations')
             .select('name, city, website')
             .eq('id', prof.default_org_id)
             .maybeSingle();
-          if (orgRow?.name) org = orgRow.name;
+          if (orgRow?.name) setOrgName(orgRow.name);
           if (orgRow?.website) setWebsite(orgRow.website);
           if (orgRow?.city) setCity(orgRow.city);
         }
-        setOrgName(org || 'Din virksomhed');
+        if (!orgName) setOrgName('Din virksomhed');
 
         if (!website) {
           const { data: brand } = await supabase
@@ -154,17 +156,13 @@ export default function DashboardPage() {
             .limit(1);
           if (brand && brand[0]?.origin) setWebsite(brand[0].origin);
         }
-      } catch {
-        // ignore
-      }
+      } catch {}
     })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Første AI-forslag
-  useEffect(() => {
-    refreshSuggestions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useEffect(() => { refreshSuggestions(); }, []);
 
   async function refreshSuggestions() {
     setSugErr(null);
@@ -174,32 +172,30 @@ export default function DashboardPage() {
       const token = s.session?.access_token;
       if (!token) throw new Error('Ikke logget ind');
 
-      // Byg kanal-tekst til topic
-      const selected: string[] = [];
-      if (useFacebook) selected.push('Facebook');
-      if (useInstagram) selected.push('Instagram');
-      const channelTopic =
-        selected.length ? `Kanal: ${selected.join(', ')}` : 'Kanal: (ikke valgt)';
+      const chosen: string[] = [];
+      if (sugChanFB) chosen.push('Facebook');
+      if (sugChanIG) chosen.push('Instagram');
+      const channelHint = chosen.length ? ` Kanaler: ${chosen.join(', ')}` : '';
 
       const resp = await fetch('/api/ai/suggest', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        },
         body: JSON.stringify({
-          topic: `Idéer til opslag for en lokal virksomhed. ${channelTopic}`,
+          topic: 'Idéer til opslag for en lokal virksomhed.' + channelHint,
           tone: 'neutral'
         })
       });
 
-      if (!resp.ok) {
-        const t = await resp.text();
-        throw new Error(t || 'AI-fejl');
-      }
+      if (!resp.ok) throw new Error(await resp.text());
       const data = await resp.json();
       const arr = Array.isArray(data.suggestions) ? data.suggestions.slice(0, 3) : [];
       setSuggestions(arr);
 
-      // LOKAL tæller +1 for AI-tekst (backend logger allerede rigtigt)
-      setCounts(prev => ({ ...prev, aiTextThisMonth: (prev.aiTextThisMonth ?? 0) + 1 }));
+      // Lokal tæller (backend logger stadig selv i ai_usage)
+      setCounts(c => ({ ...c, aiTextThisMonth: (c.aiTextThisMonth ?? 0) + 1 }));
     } catch (e: any) {
       setSugErr(e.message || 'Kunne ikke hente forslag');
       setSuggestions([]);
@@ -222,28 +218,17 @@ export default function DashboardPage() {
       const token = s.session?.access_token;
       if (!token) { setStatusMsg('Ikke logget ind.'); return; }
 
-      const toneKey =
-        tone === 'tilbud' ? 'tilbud' :
-        tone === 'informativ' ? 'informativ' :
-        tone === 'hyggelig' ? 'hyggelig' : 'neutral';
-
       const r = await fetch('/api/ai/suggest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({ post_body: body, tone: toneKey })
+        body: JSON.stringify({ post_body: body, tone })
       });
       if (!r.ok) { setStatusMsg('AI-fejl: ' + (await r.text())); return; }
       const data = await r.json();
       const first = Array.isArray(data.suggestions) && data.suggestions[0] ? String(data.suggestions[0]) : '';
-      if (first) {
-        setBody(first);
-        setStatusMsg('Opdateret med AI ✔');
-      } else {
-        setStatusMsg('AI gav ikke et brugbart svar. Prøv igen.');
-      }
-    } catch (e: any) {
-      setStatusMsg('Fejl: ' + e.message);
-    }
+      if (first) { setBody(first); setStatusMsg('Opdateret med AI ✔'); }
+      else setStatusMsg('AI gav ikke et brugbart svar. Prøv igen.');
+    } catch (e:any) { setStatusMsg('Fejl: ' + e.message); }
   }
 
   async function saveDraft() {
@@ -252,25 +237,26 @@ export default function DashboardPage() {
       const { data: s } = await supabase.auth.getSession();
       const token = s.session?.access_token;
       if (!token) { setStatusMsg('Ikke logget ind.'); return; }
+
       const r = await fetch('/api/posts/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({ title, body, image_url: imageUrl })
+        body: JSON.stringify({ title, body, image_url: quickImageUrl || imageUrl })
       });
       if (!r.ok) { setStatusMsg('Fejl: ' + (await r.text())); return; }
+
       setStatusMsg('Gemt som udkast ✔');
       setBody('');
-      setAnalysis(null);
-    } catch (e: any) {
-      setStatusMsg('Fejl: ' + e.message);
-    } finally {
-      setSaving(false);
-    }
+      // behold evt. quickImageUrl/imageUrl så man kan gemme flere
+    } catch (e:any) { setStatusMsg('Fejl: ' + e.message); }
+    finally { setSaving(false); }
   }
 
+  // -------- Foto upload (Storage) --------
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    setUploadBusy(true);
     setStatusMsg('Uploader billede…');
     try {
       const { data: userData } = await supabase.auth.getUser();
@@ -278,39 +264,42 @@ export default function DashboardPage() {
       if (!uid) { setStatusMsg('Ikke logget ind.'); return; }
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
       const path = `${uid}/${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage.from('images').upload(path, file, { cacheControl: '3600', upsert: false });
+      const { error: upErr } = await supabase.storage.from('images')
+        .upload(path, file, { cacheControl: '3600', upsert: false });
       if (upErr) { setStatusMsg('Upload-fejl: ' + upErr.message); return; }
       const { data: pub } = supabase.storage.from('images').getPublicUrl(path);
       setImageUrl(pub.publicUrl);
+      setQuickImageUrl(pub.publicUrl); // brug direkte i Hurtigt opslag
       setStatusMsg('Billede uploadet ✔');
-    } catch (e: any) {
-      setStatusMsg('Fejl: ' + e.message);
-    }
+    } catch (e:any) { setStatusMsg('Fejl: ' + e.message); }
+    finally { setUploadBusy(false); }
   }
 
+  // -------- Foto analyse --------
   async function analyzePhoto() {
-    if (!imageUrl) { setStatusMsg('Tilføj eller upload et billede først.'); return; }
+    if (!imageUrl) { setStatusMsg('Upload et billede først.'); return; }
     setAnalyzing(true); setAnalysis(null); setStatusMsg(null);
     try {
+      const chosen: string[] = [];
+      if (photoChanFB) chosen.push('facebook');
+      if (photoChanIG) chosen.push('instagram');
+
       const resp = await fetch('/api/media/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image_url: imageUrl })
+        body: JSON.stringify({ image_url: imageUrl, channels: chosen })
       });
-      if (!resp.ok) { setStatusMsg('Analyse-fejl: ' + (await resp.text())); }
-      else { setAnalysis(await resp.json()); }
-    } catch (e: any) {
-      setStatusMsg('Analyse-fejl: ' + e.message);
-    } finally {
-      setAnalyzing(false);
-    }
+      if (!resp.ok) setStatusMsg('Analyse-fejl: ' + (await resp.text()));
+      else setAnalysis(await resp.json());
+    } catch (e:any) { setStatusMsg('Analyse-fejl: ' + e.message); }
+    finally { setAnalyzing(false); }
   }
 
   const aiTotal = counts.aiTextThisMonth + counts.aiPhotoThisMonth;
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
-      {/* ØVERSTE RÆKKE: 3 kort i én linje */}
+      {/* Øverste række */}
       <section
         style={{
           display: 'grid',
@@ -319,18 +308,19 @@ export default function DashboardPage() {
           alignItems: 'stretch',
         }}
       >
-        {/* Kort 1: Opslag denne måned */}
+        {/* Kort 1 */}
         <div style={cardStyle}>
           <div style={cardTitle}>Opslag denne måned</div>
           <div style={bigNumber}>
             {loadingCounts ? '—' : counts.postsThisMonth.toLocaleString('da-DK')}
           </div>
           <div style={subText}>
-            I alt: <strong>{loadingCounts ? '—' : counts.totalPosts.toLocaleString('da-DK')}</strong>
+            I alt:{' '}
+            <strong>{loadingCounts ? '—' : counts.totalPosts.toLocaleString('da-DK')}</strong>
           </div>
         </div>
 
-        {/* Kort 2: AI denne måned */}
+        {/* Kort 2 */}
         <div style={cardStyle}>
           <div style={cardTitle}>AI denne måned</div>
           <div style={bigNumber}>{loadingCounts ? '—' : aiTotal.toLocaleString('da-DK')}</div>
@@ -340,18 +330,17 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Kort 3: Virksomhedsprofil (snapshot) */}
+        {/* Kort 3: Virksomhedsprofil */}
         <div style={{ ...cardStyle, display: 'grid', gap: 6 }}>
           <div style={cardTitle}>Virksomhedsprofil</div>
           <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>{orgName || 'Din virksomhed'}</div>
+          <div style={{ fontSize: 13, color: '#555' }}>{city ? `By: ${city}` : 'By: —'}</div>
           <div style={{ fontSize: 13, color: '#555' }}>
-            {city ? `By: ${city}` : 'By: —'}
+            Hjemmeside:{' '}
+            {website ? <a href={website} target="_blank" rel="noreferrer">{website}</a> : '—'}
           </div>
           <div style={{ fontSize: 13, color: '#555' }}>
-            Hjemmeside: {website ? <a href={website} target="_blank" rel="noreferrer">{website}</a> : '—'}
-          </div>
-          <div style={{ fontSize: 13, color: '#555' }}>
-            Kanaler: Facebook <span style={{ opacity: 0.6 }}>(snart)</span> · Instagram <span style={{ opacity: 0.6 }}>(snart)</span>
+            Kanaler: Facebook · Instagram
           </div>
           <div style={{ marginTop: 6 }}>
             <Link href="/brand" style={pillLink}>Se profil →</Link>
@@ -361,48 +350,30 @@ export default function DashboardPage() {
 
       {countsErr && <p style={{ color: '#b00' }}>{countsErr}</p>}
 
-      {/* TABS */}
+      {/* Tabs */}
       <nav style={tabsBar}>
-        <button
-          onClick={() => setActiveTab('ai')}
-          style={activeTab === 'ai' ? tabActive : tabBtn}
-        >
-          AI Assistent
-        </button>
-        <button
-          onClick={() => setActiveTab('plan')}
-          style={activeTab === 'plan' ? tabActive : tabBtn}
-        >
-          Planlæg & udgiv
-        </button>
-        <button
-          onClick={() => setActiveTab('perf')}
-          style={activeTab === 'perf' ? tabActive : tabBtn}
-        >
-          Performance
-        </button>
+        <button onClick={() => setActiveTab('ai')} style={activeTab === 'ai' ? tabActive : tabBtn}>AI Assistent</button>
+        <button onClick={() => setActiveTab('plan')} style={activeTab === 'plan' ? tabActive : tabBtn}>Planlæg & udgiv</button>
+        <button onClick={() => setActiveTab('perf')} style={activeTab === 'perf' ? tabActive : tabBtn}>Performance</button>
       </nav>
 
-      {/* INDHOLD UNDER TABS */}
+      {/* Indhold */}
       {activeTab === 'ai' && (
         <section style={{ display: 'grid', gap: 16 }}>
-          {/* AI-forslag (3 kort) + “Få 3 nye” + KANALVALG */}
+          {/* AI-forslag (3 kort) + “Få 3 nye” + kanaler */}
           <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', gap: 12, flex: '1 1 auto', minWidth: 260 }}>
-              {[0, 1, 2].map((i) => (
-                <div
-                  key={i}
-                  style={{ ...cardStyle, flex: '1 1 0', minWidth: 260, display: 'grid', gridTemplateRows: '1fr auto', gap: 8 }}
-                >
+              {[0, 1, 2].map(i => (
+                <div key={i}
+                  style={{ ...cardStyle, flex: '1 1 0', minWidth: 260, display: 'grid', gridTemplateRows: '1fr auto', gap: 8 }}>
                   <div style={{ whiteSpace: 'pre-wrap', fontSize: 14 }}>
                     {loadingSug ? 'Henter…' : (suggestions[i] || '—')}
                   </div>
                   <div>
                     <button
                       disabled={!suggestions[i]}
-                      onClick={() => suggestions[i] && pickSuggestion(suggestions[i])}
-                      style={{ width: '100%' }}
-                    >
+                      onClick={() => suggestions[i] && pickSuggestion(suggestions[i]!)}
+                      style={{ width: '100%' }}>
                       Brug dette
                     </button>
                   </div>
@@ -410,94 +381,146 @@ export default function DashboardPage() {
               ))}
             </div>
 
-            {/* Højre-kolonne: knap + kanalvalg */}
-            <div style={{ ...cardStyle, minWidth: 260, alignSelf: 'stretch', display: 'grid', gap: 8 }}>
-              <div style={{ fontWeight: 600 }}>Få 3 nye</div>
-              <button onClick={refreshSuggestions} disabled={loadingSug}>
-                {loadingSug ? 'Henter…' : 'Generér forslag'}
+            <div style={{ display:'grid', gap:6, alignContent:'start' }}>
+              <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+                <button onClick={refreshSuggestions} disabled={loadingSug}>
+                  {loadingSug ? 'Henter…' : 'Få 3 nye'}
+                </button>
+                <label style={{ fontSize:12, color:'#555' }}>
+                  <input type="checkbox" checked={sugChanFB} onChange={e=>setSugChanFB(e.target.checked)} /> Facebook
+                </label>
+                <label style={{ fontSize:12, color:'#555' }}>
+                  <input type="checkbox" checked={sugChanIG} onChange={e=>setSugChanIG(e.target.checked)} /> Instagram
+                </label>
+              </div>
+              {sugErr && <div style={{ color:'#b00' }}>{sugErr}</div>}
+            </div>
+          </div>
+
+          {/* Hurtigt opslag */}
+          <div id="quick-post" style={cardStyle}>
+            <div style={cardTitle}>Hurtigt opslag</div>
+            <div style={{ display: 'grid', gap: 8, maxWidth: 720 }}>
+              <label style={labelStyle}>Titel (valgfri)</label>
+              <input value={title} onChange={e => setTitle(e.target.value)} />
+
+              <label style={labelStyle}>Tekst</label>
+              <textarea rows={6} value={body} onChange={e => setBody(e.target.value)}
+                        placeholder="Sæt et AI-forslag ind eller skriv selv…" />
+
+              {/* Mini AI-assistent */}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, color: '#666' }}>Tone:</span>
+                <select value={tone} onChange={e => setTone(e.target.value as any)}>
+                  <option value="neutral">Neutral/Venlig</option>
+                  <option value="tilbud">Tilbud</option>
+                  <option value="informativ">Informativ</option>
+                  <option value="hyggelig">Hyggelig</option>
+                </select>
+
+                <button type="button" onClick={improveWithAI}>Forbedr med AI</button>
+                <button type="button" onClick={saveDraft} disabled={saving}>
+                  {saving ? 'Gemmer…' : 'Gem som udkast'}
+                </button>
+                <Link href="/posts" style={pillLink}>Gå til dine opslag →</Link>
+              </div>
+
+              {/* Billede preview der følger opslaget */}
+              {(quickImageUrl || imageUrl) && (
+                <div style={{ marginTop: 8 }}>
+                  <img
+                    src={quickImageUrl || imageUrl}
+                    alt="Valgt billede"
+                    style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid #eee' }}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Foto-hjælp (upload + analyse) */}
+          <div style={cardStyle}>
+            <div style={cardTitle}>Foto-hjælp</div>
+
+            {/* Upload-zone (½-bredde følelse via maxWidth) */}
+            <div
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) fileInputPick(f); }}
+              style={{
+                border: '2px dashed #ddd',
+                borderRadius: 12,
+                padding: 20,
+                minHeight: 140,
+                display: 'grid',
+                placeItems: 'center',
+                maxWidth: 720
+              }}
+            >
+              <div style={{ textAlign:'center' }}>
+                <div style={{ fontSize: 18, marginBottom: 8 }}>Upload et billede</div>
+                <div style={{ color:'#666', marginBottom: 10 }}>
+                  Få AI-feedback på lys, format og komposition
+                </div>
+                <label
+                  style={{
+                    display:'inline-block', padding:'10px 14px', border:'1px solid #111',
+                    borderRadius:8, cursor:'pointer', background:'#111', color:'#fff'
+                  }}
+                >
+                  {uploadBusy ? 'Uploader…' : 'Vælg fil'}
+                  <input type="file" accept="image/*" onChange={onFileInput} style={{ display:'none' }} />
+                </label>
+              </div>
+            </div>
+
+            {/* Kontroller + analyse */}
+            <div style={{ display:'flex', gap:12, alignItems:'center', flexWrap:'wrap', marginTop: 10 }}>
+              <label style={{ fontSize:12, color:'#555' }}>
+                <input type="checkbox" checked={photoChanFB} onChange={e=>setPhotoChanFB(e.target.checked)} /> Facebook
+              </label>
+              <label style={{ fontSize:12, color:'#555' }}>
+                <input type="checkbox" checked={photoChanIG} onChange={e=>setPhotoChanIG(e.target.checked)} /> Instagram
+              </label>
+
+              <button type="button" onClick={analyzePhoto} disabled={!imageUrl || analyzing}>
+                {analyzing ? 'Analyserer…' : 'Analyser billede'}
               </button>
 
-              <div style={{ fontSize: 12, color: '#666' }}>Kanaler (påvirker forslag):</div>
-              <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input
-                  type="checkbox"
-                  checked={useFacebook}
-                  onChange={(e) => setUseFacebook(e.target.checked)}
-                />
-                Facebook
-              </label>
-              <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input
-                  type="checkbox"
-                  checked={useInstagram}
-                  onChange={(e) => setUseInstagram(e.target.checked)}
-                />
-                Instagram
-              </label>
-
-              {sugErr && <div style={{ color: '#b00', marginTop: 6 }}>{sugErr}</div>}
+              {imageUrl && (
+                <button type="button" onClick={() => { setQuickImageUrl(imageUrl); scrollToQuick(); }}>
+                  Brug i opslag
+                </button>
+              )}
             </div>
+
+            {/* Preview */}
+            {imageUrl && (
+              <div style={{ marginTop: 12 }}>
+                <img src={imageUrl} alt="Upload" style={{ maxWidth: '100%', borderRadius: 8, border:'1px solid #eee' }} />
+              </div>
+            )}
+
+            {/* Feedback */}
+            {analysis && (
+              <section style={{ marginTop: 12, padding: 10, border: '1px solid #eee', borderRadius: 8 }}>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>Foto-feedback</div>
+                <p><strong>Størrelse:</strong> {analysis.width}×{analysis.height} ({analysis.aspect_label})</p>
+                <p>
+                  <strong>Lys (0-255):</strong> {analysis.brightness} — <strong>Kontrast:</strong> {analysis.contrast} — <strong>Skarphed:</strong> {analysis.sharpness}
+                </p>
+                <p><strong>Vurdering:</strong> {analysis.verdict}</p>
+                <ul>
+                  {analysis.suggestions.map((s, i) => <li key={i}>{s}</li>)}
+                </ul>
+              </section>
+            )}
           </div>
 
-          {/* Hurtigt opslag + Mini AI-assistent + Foto-hjælp */}
-          <div id="quick-post" style={{ display: 'grid', gap: 16 }}>
-            {/* Hurtigt opslag */}
-            <div style={cardStyle}>
-              <div style={cardTitle}>Hurtigt opslag</div>
-              <div style={{ display: 'grid', gap: 8, maxWidth: 720 }}>
-                <label style={labelStyle}>Titel (valgfri)</label>
-                <input value={title} onChange={e => setTitle(e.target.value)} />
-
-                <label style={labelStyle}>Tekst</label>
-                <textarea rows={6} value={body} onChange={e => setBody(e.target.value)} placeholder="Sæt et AI-forslag ind eller skriv selv…" />
-
-                {/* Mini AI-assistent (forbedr tekst) */}
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 12, color: '#666' }}>Tone:</span>
-                  <select value={tone} onChange={e => setTone(e.target.value as any)}>
-                    <option value="neutral">Neutral/Venlig</option>
-                    <option value="tilbud">Tilbud</option>
-                    <option value="informativ">Informativ</option>
-                    <option value="hyggelig">Hyggelig</option>
-                  </select>
-                  <button type="button" onClick={improveWithAI}>Forbedr med AI</button>
-                  <button type="button" onClick={saveDraft} disabled={saving}>{saving ? 'Gemmer…' : 'Gem som udkast'}</button>
-                  <Link href="/posts" style={pillLink}>Gå til dine opslag →</Link>
-                </div>
-              </div>
-            </div>
-
-            {/* Foto-hjælp */}
-            <div style={cardStyle}>
-              <div style={cardTitle}>Foto-hjælp</div>
-              <div style={{ display: 'grid', gap: 8, maxWidth: 720 }}>
-                <label style={labelStyle}>Billede-URL (valgfri)</label>
-                <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://..." />
-                <label style={labelStyle}>Upload billede (valgfri)</label>
-                <input type="file" accept="image/*" onChange={handleFile} />
-
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button type="button" onClick={analyzePhoto} disabled={!imageUrl || analyzing}>
-                    {analyzing ? 'Analyserer…' : 'Analyser billede'}
-                  </button>
-                </div>
-
-                {analysis && (
-                  <section style={{ marginTop: 6, padding: 10, border: '1px solid #eee', borderRadius: 8 }}>
-                    <div style={{ fontWeight: 600, marginBottom: 6 }}>Foto-feedback</div>
-                    <p><strong>Størrelse:</strong> {analysis.width}×{analysis.height} ({analysis.aspect_label})</p>
-                    <p><strong>Lys (0-255):</strong> {analysis.brightness} — <strong>Kontrast:</strong> {analysis.contrast} — <strong>Skarphed:</strong> {analysis.sharpness}</p>
-                    <p><strong>Vurdering:</strong> {analysis.verdict}</p>
-                    <ul>
-                      {analysis.suggestions.map((s, i) => <li key={i}>{s}</li>)}
-                    </ul>
-                  </section>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {statusMsg && <p style={{ color: statusMsg.startsWith('Fejl') ? '#b00' : '#222' }}>{statusMsg}</p>}
+          {statusMsg && (
+            <p style={{ color: statusMsg.startsWith('Fejl') ? '#b00' : '#222' }}>
+              {statusMsg}
+            </p>
+          )}
         </section>
       )}
 
@@ -514,9 +537,41 @@ export default function DashboardPage() {
       )}
     </div>
   );
+
+  // helpers
+  function scrollToQuick() {
+    const el = document.getElementById('quick-post');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function onFileInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (f) fileInputPick(f);
+  }
+
+  async function fileInputPick(file: File) {
+    // same as handleFile but accepts a File object
+    setUploadBusy(true);
+    setStatusMsg('Uploader billede…');
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const uid = userData.user?.id;
+      if (!uid) { setStatusMsg('Ikke logget ind.'); return; }
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const path = `${uid}/${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from('images')
+        .upload(path, file, { cacheControl: '3600', upsert: false });
+      if (upErr) { setStatusMsg('Upload-fejl: ' + upErr.message); return; }
+      const { data: pub } = supabase.storage.from('images').getPublicUrl(path);
+      setImageUrl(pub.publicUrl);
+      setQuickImageUrl(pub.publicUrl);
+      setStatusMsg('Billede uploadet ✔');
+    } catch (e:any) { setStatusMsg('Fejl: ' + e.message); }
+    finally { setUploadBusy(false); }
+  }
 }
 
-/* ---------- STYLES (inline, genbrugelige) ---------- */
+/* ---------- STYLES ---------- */
 
 const cardStyle: React.CSSProperties = {
   border: '1px solid #eee',
