@@ -814,7 +814,7 @@ const tabsBar: React.CSSProperties = {
 
 const tabBtn: React.CSSProperties = {
   padding: '8px 12px',
-  border: '1px solid '#eee',
+  border: '1px solid #eee',
   background: '#fff',
   borderRadius: 999,
   cursor: 'pointer',
