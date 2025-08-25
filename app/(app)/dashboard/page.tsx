@@ -25,7 +25,6 @@ type Analysis = {
 } | null;
 
 type TabKey = 'ai' | 'plan' | 'perf';
-type Aspect = 'orig' | '1:1' | '4:5' | '1.91:1';
 
 export default function DashboardPage() {
   // ---------- HERO-KORT ----------
@@ -59,23 +58,23 @@ export default function DashboardPage() {
 
   // ---------- FOTO-HJÆLP ----------
   const [imageUrl, setImageUrl] = useState(''); // upload-resultat
-  const [uploadBusy, setUploadBusy] = useState(false);
-
-  // Analyse
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<Analysis>(null);
   const [photoChanFB, setPhotoChanFB] = useState(true);
   const [photoChanIG, setPhotoChanIG] = useState(true);
+  const [uploadBusy, setUploadBusy] = useState(false);
 
-  // Crop/komposition (preview, P1)
-  const [cropAspect, setCropAspect] = useState<Aspect>('orig');
-  const [posX, setPosX] = useState(50); // 0..100 (object-position X)
-  const [posY, setPosY] = useState(50); // 0..100 (object-position Y)
-  const [showGrid, setShowGrid] = useState(false);
-  const [appliedCrop, setAppliedCrop] = useState<{ aspect: Aspect; posX: number; posY: number } | null>(null);
+  // Crop/komposition (P1 – ikke-destruktiv preview)
+  const [previewChannel, setPreviewChannel] = useState<'instagram' | 'facebook' | null>(null);
+  const [previewAspect, setPreviewAspect] = useState<'1:1' | '4:5' | '1.91:1' | null>(null);
+  const [showThirds, setShowThirds] = useState(false);
+  const [cropApplied, setCropApplied] = useState<{ channel: string | null; aspect: string | null }>({ channel: null, aspect: null });
 
-  // Farver & lys – noter (tekstsuggestions "nu")
-  const [colorNotes, setColorNotes] = useState<string[]>([]);
+  // Simuleret "rengøring via beskæring" små-nudges (ikke destruktivt)
+  const [nudge, setNudge] = useState<{ leftPct: number; topPct: number }>({ leftPct: 0, topPct: 0 });
+
+  // Plan til at låse AI-fjernelse (🔒 i Gratis)
+  const [plan, setPlan] = useState<'free' | 'basic' | 'pro' | 'premium'>('free');
 
   // ---------- VIRKSOMHEDSSNAPSHOT ----------
   const [orgName, setOrgName] = useState<string>('');
@@ -140,14 +139,21 @@ export default function DashboardPage() {
     })();
   }, [startISO]);
 
-  // Snapshot org
+  // Snapshot org + plan
   useEffect(() => {
     (async () => {
       try {
         const { data: prof } = await supabase
           .from('profiles')
-          .select('full_name, default_org_id')
+          .select('full_name, default_org_id, plan_id')
           .maybeSingle();
+
+        if (prof?.plan_id) {
+          const p = String(prof.plan_id).toLowerCase();
+          if (p === 'premium' || p === 'pro' || p === 'basic' || p === 'free') {
+            setPlan(p as any);
+          }
+        }
 
         if (prof?.default_org_id) {
           const { data: orgRow } = await supabase
@@ -171,7 +177,7 @@ export default function DashboardPage() {
         }
       } catch {}
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Første AI-forslag
@@ -260,16 +266,16 @@ export default function DashboardPage() {
 
       setStatusMsg('Gemt som udkast ✔');
       setBody('');
+      // behold evt. quickImageUrl/imageUrl
     } catch (e:any) { setStatusMsg('Fejl: ' + e.message); }
     finally { setSaving(false); }
   }
 
   // -------- Foto upload (Storage) --------
-  async function onFileInput(e: React.ChangeEvent<HTMLInputElement>) {
+  function onFileInput(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (f) fileInputPick(f);
   }
-
   async function fileInputPick(file: File) {
     setUploadBusy(true);
     setStatusMsg('Uploader billede…');
@@ -284,7 +290,7 @@ export default function DashboardPage() {
       if (upErr) { setStatusMsg('Upload-fejl: ' + upErr.message); return; }
       const { data: pub } = supabase.storage.from('images').getPublicUrl(path);
       setImageUrl(pub.publicUrl);
-      setQuickImageUrl(pub.publicUrl);
+      setQuickImageUrl(pub.publicUrl); // kan bruges i Hurtigt opslag
       setStatusMsg('Billede uploadet ✔');
     } catch (e:any) { setStatusMsg('Fejl: ' + e.message); }
     finally { setUploadBusy(false); }
@@ -310,36 +316,23 @@ export default function DashboardPage() {
     finally { setAnalyzing(false); }
   }
 
-  // -------- Crop helpers (preview P1) --------
-  function setAspect(a: Aspect) { setCropAspect(a); }
-  function clamp(n:number, min=0, max=100) { return Math.max(min, Math.min(max, n)); }
-  function nudge(dir:'left'|'right'|'up'|'down', pct=3) {
-    if (dir === 'left') setPosX(x => clamp(x - pct));
-    if (dir === 'right') setPosX(x => clamp(x + pct));
-    if (dir === 'up') setPosY(y => clamp(y - pct));
-    if (dir === 'down') setPosY(y => clamp(y + pct));
-  }
-  function thirds() { setShowGrid(s => !s); }
-  function moveToThird() {
-    // enkel “move subject”: skift mellem ~33% og ~66% vandret
-    setPosX(x => (x < 50 ? 66 : 33));
-  }
-  function previewScroll() {
-    const el = document.getElementById('photo-preview');
+  // Helpers
+  function scrollToQuick() {
+    const el = document.getElementById('quick-post');
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
-  function applyCrop() {
-    setAppliedCrop({ aspect: cropAspect, posX, posY });
-    // (P2) Gem som kopi i Storage – kommer senere
+
+  // Beregn aspectRatio CSS-værdi
+  function cssAspect(aspect: '1:1' | '4:5' | '1.91:1' | null): string | undefined {
+    if (!aspect) return undefined;
+    if (aspect === '1:1') return '1 / 1';
+    if (aspect === '4:5') return '4 / 5';
+    // 1.91:1 (bred)
+    return '1.91 / 1';
   }
-  function addColorNote(s: string) {
-    setColorNotes(list => (list.includes(s) ? list : [...list, s]));
-  }
-  function clearColorNotes() { setColorNotes([]); }
 
   const aiTotal = counts.aiTextThisMonth + counts.aiPhotoThisMonth;
 
-  // ---------- UI ----------
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       {/* Øverste række */}
@@ -440,7 +433,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Hurtigt opslag (UFORTÆNKT) */}
+          {/* Hurtigt opslag */}
           <div id="quick-post" style={cardStyle}>
             <div style={cardTitle}>Hurtigt opslag</div>
             <div style={{ display: 'grid', gap: 8, maxWidth: 720 }}>
@@ -468,6 +461,7 @@ export default function DashboardPage() {
                 <Link href="/posts" style={pillLink}>Gå til dine opslag →</Link>
               </div>
 
+              {/* Billede preview der følger opslaget */}
               {(quickImageUrl || imageUrl) && (
                 <div style={{ marginTop: 8 }}>
                   <img
@@ -480,144 +474,169 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Foto-hjælp (upload + VENSTRE: crop/rengøring/farver · HØJRE: preview/kanaler/analyse) */}
+          {/* Foto-hjælp — NY 2-kolonne udgave */}
           <div style={cardStyle}>
             <div style={cardTitle}>Foto-hjælp</div>
 
-            {/* Upload-zone (øverst) */}
-            <div
-              onDragOver={e => e.preventDefault()}
-              onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) fileInputPick(f); }}
-              style={{
-                border: '2px dashed #ddd',
-                borderRadius: 12,
-                padding: 20,
-                minHeight: 140,
-                display: 'grid',
-                placeItems: 'center',
-                maxWidth: 720,
-                marginBottom: 12
-              }}
-            >
-              <div style={{ textAlign:'center' }}>
-                <div style={{ fontSize: 18, marginBottom: 8 }}>Upload et billede</div>
-                <div style={{ color:'#666', marginBottom: 10 }}>
-                  Få AI-feedback på lys, format og komposition
-                </div>
-                <label
-                  style={{
-                    display:'inline-block', padding:'10px 14px', border:'1px solid #111',
-                    borderRadius:8, cursor:'pointer', background:'#111', color:'#fff'
-                  }}
-                >
-                  {uploadBusy ? 'Uploader…' : 'Vælg fil'}
-                  <input type="file" accept="image/*" onChange={onFileInput} style={{ display:'none' }} />
-                </label>
-              </div>
-            </div>
-
-            {/* To kolonner */}
-            <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
-              {/* VENSTRE: Beskæring & komposition · Rengøring · Farver & lys */}
-              <div style={{ flex:'0 1 360px', minWidth: 300, display:'grid', gap:12 }}>
+            <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'minmax(280px, 1fr) 2fr' }}>
+              {/* Venstre kolonne: Kontrolpanel */}
+              <div style={{ display: 'grid', gap: 14 }}>
                 {/* 1) Beskæring & komposition */}
-                <section style={sectionBox}>
-                  <div style={sectionTitle}>Beskæring & komposition</div>
+                <section style={subCard}>
+                  <div style={subTitle}>Beskæring & komposition</div>
 
-                  <div style={{ fontSize:12, color:'#666', marginBottom:6 }}>Hurtigvalg (1-klik preview)</div>
-                  <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                    {/* Instagram */}
-                    <span style={badge}>Instagram</span>
-                    <button type="button" onClick={() => setAspect('1:1')}
-                      style={cropBtn(cropAspect==='1:1')}>1:1 (1080×1080)</button>
-                    <button type="button" onClick={() => setAspect('4:5')}
-                      style={cropBtn(cropAspect==='4:5')}>4:5 (1080×1350)</button>
-                  </div>
-                  <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginTop:6 }}>
-                    {/* Facebook */}
-                    <span style={badge}>Facebook</span>
-                    <button type="button" onClick={() => setAspect('4:5')}
-                      style={cropBtn(cropAspect==='4:5')}>4:5 (1080×1350)</button>
-                    <button type="button" onClick={() => setAspect('1.91:1')}
-                      style={cropBtn(cropAspect==='1.91:1')}>1.91:1 (1200×630)</button>
+                  <div style={{ fontSize: 12, color:'#666', marginBottom: 6 }}>Hurtigvalg (1-klik preview):</div>
+
+                  {/* Instagram */}
+                  <div style={{ display:'grid', gap:6 }}>
+                    <div style={{ fontSize: 12, color:'#444' }}>Instagram (feed)</div>
+                    <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                      <label style={chip}>
+                        <input
+                          type="radio"
+                          name="ratio"
+                          checked={previewChannel==='instagram' && previewAspect==='1:1'}
+                          onChange={() => { setPreviewChannel('instagram'); setPreviewAspect('1:1'); }}
+                        />
+                        1:1 (1080×1080)
+                      </label>
+                      <label style={chip}>
+                        <input
+                          type="radio"
+                          name="ratio"
+                          checked={previewChannel==='instagram' && previewAspect==='4:5'}
+                          onChange={() => { setPreviewChannel('instagram'); setPreviewAspect('4:5'); }}
+                        />
+                        4:5 (1080×1350)
+                      </label>
+                    </div>
                   </div>
 
-                  {/* Auto-komposition */}
-                  <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginTop:10 }}>
-                    <button type="button" onClick={thirds} style={smallBtn}>
-                      {showGrid ? 'Skjul tredjedels-gitter' : 'Vis tredjedels-gitter'}
+                  {/* Facebook */}
+                  <div style={{ display:'grid', gap:6, marginTop: 8 }}>
+                    <div style={{ fontSize: 12, color:'#444' }}>Facebook (feed)</div>
+                    <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                      <label style={chip}>
+                        <input
+                          type="radio"
+                          name="ratio"
+                          checked={previewChannel==='facebook' && previewAspect==='4:5'}
+                          onChange={() => { setPreviewChannel('facebook'); setPreviewAspect('4:5'); }}
+                        />
+                        4:5 (1080×1350)
+                      </label>
+                      <label style={chip}>
+                        <input
+                          type="radio"
+                          name="ratio"
+                          checked={previewChannel==='facebook' && previewAspect==='1.91:1'}
+                          onChange={() => { setPreviewChannel('facebook'); setPreviewAspect('1.91:1'); }}
+                        />
+                        1.91:1 (1200×630)
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Tredjedels-gitter + knapper */}
+                  <div style={{ display:'flex', gap:10, alignItems:'center', marginTop: 10 }}>
+                    <label style={{ fontSize:12, color:'#555' }}>
+                      <input type="checkbox" checked={showThirds} onChange={e=>setShowThirds(e.target.checked)} /> Vis tredjedels-gitter
+                    </label>
+
+                    <button type="button" onClick={() => setStatusMsg('Preview opdateret ✔')}>
+                      Preview
                     </button>
-                    <button type="button" onClick={moveToThird} style={smallBtn}>
-                      Flyt motiv mod tredjedel
+                    <button
+                      type="button"
+                      onClick={() => { setCropApplied({ channel: previewChannel, aspect: previewAspect }); setStatusMsg('Beskæring anvendt (ikke permanent) ✔'); }}
+                      disabled={!previewAspect}
+                    >
+                      Anvend
                     </button>
                   </div>
 
-                  {/* Preview/Anvend */}
-                  <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginTop:10 }}>
-                    <button type="button" onClick={previewScroll}>Preview</button>
-                    <button type="button" onClick={applyCrop}>Anvend</button>
-                    <button type="button" disabled title="Kommer snart">Gem som kopi (P2)</button>
+                  <div style={{ fontSize:12, color:'#666', marginTop:6 }}>
+                    Tip: Hold fokus på hovedmotiv – undgå for meget luft.
                   </div>
-
-                  <p style={{ fontSize:12, color:'#666', marginTop:8 }}>
-                    Tip: Hold fokus på hovedmotiv – undgå for meget “luft”.
-                  </p>
                 </section>
 
                 {/* 2) Rengøring */}
-                <section style={sectionBox}>
-                  <div style={sectionTitle}>Rengøring</div>
-
-                  <div style={{ fontSize:12, color:'#666', marginBottom:6 }}>Skjul distraktion (via beskæring)</div>
-                  <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                    <button type="button" onClick={() => nudge('left', 3)} style={smallBtn}>
-                      Beskær 3% venstre
+                <section style={subCard}>
+                  <div style={subTitle}>Rengøring</div>
+                  <div style={{ fontSize:12, color:'#666', marginBottom:6 }}>
+                    Skjul distraktion via beskæring (aktiv i alle planer):
+                  </div>
+                  <div style={{ display:'grid', gap:6 }}>
+                    <button type="button" onClick={() => { setNudge({ leftPct: 3, topPct: 0 }); setStatusMsg('Preview: beskær 3% i venstre side ✔'); }}>
+                      Beskær 3% i venstre side (fjern hjørne-distraktion)
                     </button>
-                    <button type="button" onClick={() => nudge('right', 3)} style={smallBtn}>
-                      Beskær 3% højre
-                    </button>
-                    <button type="button" onClick={() => nudge('up', 3)} style={smallBtn}>
-                      Beskær 3% top
-                    </button>
-                    <button type="button" onClick={() => nudge('down', 3)} style={smallBtn}>
-                      Beskær 3% bund
+                    <button type="button" onClick={() => { setNudge({ leftPct: 0, topPct: 2 }); setStatusMsg('Preview: beskær 2% i toppen ✔'); }}>
+                      Beskær 2% i toppen (få motiv i rette højde)
                     </button>
                   </div>
 
-                  <div style={{ fontSize:12, color:'#666', margin:'10px 0 6px' }}>AI-fjernelse (låst i Gratis)</div>
-                  <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                    <button type="button" disabled title="Opgradér for at bruge" style={lockedBtn}>🔒 Fjern skeen til højre</button>
-                    <button type="button" disabled title="Opgradér for at bruge" style={lockedBtn}>🔒 Reducér vandkaraflen</button>
+                  <div style={{ fontSize:12, color:'#666', marginTop:10 }}>
+                    AI-fjernelse (Pro/Premium – senere):
+                  </div>
+                  <div style={{ display:'grid', gap:6, marginTop:6 }}>
+                    <button type="button" disabled={plan==='free' || plan==='basic'} title={plan==='free'||plan==='basic' ? 'Opgradér for at bruge' : ''}>
+                      {plan==='free'||plan==='basic' ? '🔒 ' : ''}Fjern skeen til højre
+                    </button>
+                    <button type="button" disabled={plan==='free' || plan==='basic'} title={plan==='free'||plan==='basic' ? 'Opgradér for at bruge' : ''}>
+                      {plan==='free'||plan==='basic' ? '🔒 ' : ''}Reducer synligheden af vandkaraflen
+                    </button>
                   </div>
                 </section>
 
                 {/* 3) Farver & lys */}
-                <section style={sectionBox}>
-                  <div style={sectionTitle}>Farver & lys</div>
-                  <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                    <button type="button" onClick={() => addColorNote('Giv billedet mere varme (café-stemning).')} style={smallBtn}>
-                      + Varme (café)
-                    </button>
-                    <button type="button" onClick={() => addColorNote('Lidt mere kontrast/mætning, så motivet popper.')} style={smallBtn}>
-                      + Kontrast/mætning
-                    </button>
-                    <button type="button" onClick={() => addColorNote('Lidt ekstra lys på desserten (hero shot).')} style={smallBtn}>
-                      + Lys på motiv
-                    </button>
-                    <button type="button" onClick={clearColorNotes} style={smallBtn}>Ryd noter</button>
+                <section style={subCard}>
+                  <div style={subTitle}>Farver & lys</div>
+                  <ul style={{ margin:'6px 0 0 18px', fontSize:14 }}>
+                    <li>Giv billedet mere varme (café-stemning)</li>
+                    <li>Lidt mere kontrast/mætning, så motivet “popper”</li>
+                    <li>Lidt ekstra lys på selve desserten (hero shot)</li>
+                  </ul>
+                  <div style={{ fontSize:12, color:'#666', marginTop:6 }}>
+                    (P2: Hurtig-presets med preview + “Gem som kopi”)
                   </div>
-                  {colorNotes.length > 0 && (
-                    <ul style={{ marginTop:8 }}>
-                      {colorNotes.map((n,i) => <li key={i} style={{ fontSize:13 }}>{n}</li>)}
-                    </ul>
-                  )}
                 </section>
               </div>
 
-              {/* HØJRE: Preview + kanaler + analyse */}
-              <div style={{ flex:'1 1 420px', minWidth: 320 }}>
-                {/* Kontroller */}
-                <div style={{ display:'flex', gap:12, alignItems:'center', flexWrap:'wrap', marginBottom:8 }}>
+              {/* Højre kolonne: Upload + preview + kanaler */}
+              <div style={{ display:'grid', gap:12 }}>
+                {/* Upload-zone */}
+                <div
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) fileInputPick(f); }}
+                  style={{
+                    border: '2px dashed #ddd',
+                    borderRadius: 12,
+                    padding: 20,
+                    minHeight: 140,
+                    display: 'grid',
+                    placeItems: 'center',
+                    maxWidth: 720
+                  }}
+                >
+                  <div style={{ textAlign:'center' }}>
+                    <div style={{ fontSize: 18, marginBottom: 8 }}>Upload et billede</div>
+                    <div style={{ color:'#666', marginBottom: 10 }}>
+                      Få AI-feedback på lys, format og komposition
+                    </div>
+                    <label
+                      style={{
+                        display:'inline-block', padding:'10px 14px', border:'1px solid #111',
+                        borderRadius:8, cursor:'pointer', background:'#111', color:'#fff'
+                      }}
+                    >
+                      {uploadBusy ? 'Uploader…' : 'Vælg fil'}
+                      <input type="file" accept="image/*" onChange={onFileInput} style={{ display:'none' }} />
+                    </label>
+                  </div>
+                </div>
+
+                {/* Kanaler + actions */}
+                <div style={{ display:'flex', gap:12, alignItems:'center', flexWrap:'wrap' }}>
                   <label style={{ fontSize:12, color:'#555' }}>
                     <input type="checkbox" checked={photoChanFB} onChange={e=>setPhotoChanFB(e.target.checked)} /> Facebook
                   </label>
@@ -636,35 +655,60 @@ export default function DashboardPage() {
                   )}
                 </div>
 
-                {/* Preview */}
-                <div id="photo-preview" style={previewWrap(cropAspect)}>
-                  {imageUrl ? (
-                    <>
-                      <img
-                        src={imageUrl}
-                        alt="Preview"
-                        style={{
-                          width:'100%', height:'100%',
-                          objectFit:'cover',
-                          objectPosition: `${posX}% ${posY}%`,
-                          display:'block'
-                        }}
-                      />
-                      {showGrid && <ThirdsGrid />}
-                      {appliedCrop && (
-                        <div style={appliedBadge}>Anvendt</div>
-                      )}
-                    </>
-                  ) : (
-                    <div style={{ display:'grid', placeItems:'center', color:'#666', height:'100%' }}>
-                      Intet billede endnu
-                    </div>
-                  )}
-                </div>
+                {/* Preview m. aspect + thirds + nudge */}
+                {imageUrl && (
+                  <div style={{
+                    position:'relative',
+                    border:'1px solid #eee',
+                    borderRadius: 8,
+                    overflow:'hidden',
+                    // CSS aspect ratio på container:
+                    aspectRatio: cssAspect(previewAspect),
+                    // Hvis ingen valgt ratio → vis billedet i fri højde
+                    minHeight: previewAspect ? undefined : 240
+                  }}>
+                    {/* Billede */}
+                    <img
+                      src={imageUrl}
+                      alt="Upload"
+                      style={{
+                        position:'absolute',
+                        inset:0,
+                        width:'100%',
+                        height:'100%',
+                        objectFit:'cover',
+                        // simuler "nudge" ved at flytte billedets origin (ikke ægte crop – kun preview)
+                        transform: `translate(${-nudge.leftPct}%, ${-nudge.topPct}%)`
+                      }}
+                    />
+                    {/* Tredjedels-gitter */}
+                    {showThirds && (
+                      <>
+                        {/* Lodrette linjer */}
+                        <div style={gridLineV(33.333)} />
+                        <div style={gridLineV(66.666)} />
+                        {/* Vandrette linjer */}
+                        <div style={gridLineH(33.333)} />
+                        <div style={gridLineH(66.666)} />
+                      </>
+                    )}
 
-                {/* Feedback fra analyse */}
+                    {/* Badge m. valgt ratio */}
+                    {(previewChannel || previewAspect) && (
+                      <div style={{
+                        position:'absolute', right:8, top:8,
+                        fontSize:12, background:'rgba(0,0,0,0.65)', color:'#fff',
+                        padding:'2px 8px', borderRadius: 999
+                      }}>
+                        {previewChannel ? previewChannel : ''}{previewChannel && previewAspect ? ' · ' : ''}{previewAspect || ''}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Analyse-feedback (hvis kaldt) */}
                 {analysis && (
-                  <section style={{ marginTop: 12, padding: 10, border: '1px solid #eee', borderRadius: 8 }}>
+                  <section style={{ marginTop: 8, padding: 10, border: '1px solid #eee', borderRadius: 8 }}>
                     <div style={{ fontWeight: 600, marginBottom: 6 }}>Foto-feedback</div>
                     <p><strong>Størrelse:</strong> {analysis.width}×{analysis.height} ({analysis.aspect_label})</p>
                     <p>
@@ -678,13 +722,13 @@ export default function DashboardPage() {
                 )}
               </div>
             </div>
-
-            {statusMsg && (
-              <p style={{ color: statusMsg.startsWith('Fejl') ? '#b00' : '#222', marginTop:8 }}>
-                {statusMsg}
-              </p>
-            )}
           </div>
+
+          {statusMsg && (
+            <p style={{ color: statusMsg.startsWith('Fejl') ? '#b00' : '#222' }}>
+              {statusMsg}
+            </p>
+          )}
         </section>
       )}
 
@@ -701,40 +745,6 @@ export default function DashboardPage() {
       )}
     </div>
   );
-
-  // helpers
-  function scrollToQuick() {
-    const el = document.getElementById('quick-post');
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-
-  // Preview box med aspectRatio
-  function previewWrap(a: Aspect): React.CSSProperties {
-    const aspect = a === '1:1' ? '1 / 1' : a === '4:5' ? '4 / 5' : a === '1.91:1' ? '1.91 / 1' : undefined;
-    return {
-      border:'1px solid #eee',
-      borderRadius: 12,
-      overflow:'hidden',
-      width: '100%',
-      maxWidth: 720,
-      aspectRatio: aspect, // bruger CSS native; hvis undefined = fri højde (orig)
-      minHeight: aspect ? undefined : 240,
-      position: 'relative',
-      background:'#fafafa'
-    };
-  }
-
-  function ThirdsGrid() {
-    const line: React.CSSProperties = { position:'absolute', background:'rgba(255,255,255,0.8)', pointerEvents:'none' };
-    return (
-      <>
-        <div style={{ ...line, top:0, bottom:0, left:'33.333%', width:1 }} />
-        <div style={{ ...line, top:0, bottom:0, left:'66.666%', width:1 }} />
-        <div style={{ ...line, left:0, right:0, top:'33.333%', height:1 }} />
-        <div style={{ ...line, left:0, right:0, top:'66.666%', height:1 }} />
-      </>
-    );
-  }
 }
 
 /* ---------- STYLES ---------- */
@@ -745,6 +755,20 @@ const cardStyle: React.CSSProperties = {
   padding: 16,
   background: '#fff',
   boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+};
+
+const subCard: React.CSSProperties = {
+  border: '1px solid #f0f0f0',
+  borderRadius: 10,
+  padding: 12,
+  background: '#fafafa'
+};
+
+const subTitle: React.CSSProperties = {
+  fontSize: 12,
+  color: '#444',
+  fontWeight: 600,
+  marginBottom: 6,
 };
 
 const cardTitle: React.CSSProperties = {
@@ -790,7 +814,7 @@ const tabsBar: React.CSSProperties = {
 
 const tabBtn: React.CSSProperties = {
   padding: '8px 12px',
-  border: '1px solid #eee',
+  border: '1px solid '#eee',
   background: '#fff',
   borderRadius: 999,
   cursor: 'pointer',
@@ -803,55 +827,28 @@ const tabActive: React.CSSProperties = {
   borderColor: '#111',
 };
 
-const sectionBox: React.CSSProperties = {
-  border:'1px solid #f0f0f0',
-  borderRadius: 10,
-  padding: 12,
-  background:'#fcfcfc'
-};
-
-const sectionTitle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 600,
-  color:'#333',
-  marginBottom: 6
-};
-
-const badge: React.CSSProperties = {
-  fontSize: 11, color:'#444', background:'#f3f3f3', border:'1px solid #e5e5e5',
-  padding:'2px 8px', borderRadius: 999
-};
-
-const smallBtn: React.CSSProperties = {
-  fontSize: 12,
-  padding: '6px 10px',
+const chip: React.CSSProperties = {
+  display:'inline-flex',
+  gap:6,
+  alignItems:'center',
   border: '1px solid #ddd',
-  background: '#fff',
-  borderRadius: 8,
-  cursor: 'pointer'
+  borderRadius: 999,
+  padding: '4px 10px',
+  fontSize: 12,
+  cursor: 'pointer',
 };
 
-const lockedBtn: React.CSSProperties = {
-  ...smallBtn,
-  opacity: 0.6,
-  cursor: 'not-allowed' as const
-};
-
-function cropBtn(active:boolean): React.CSSProperties {
+function gridLineV(percent: number): React.CSSProperties {
   return {
-    ...smallBtn,
-    borderColor: active ? '#111' : '#ddd',
-    background: active ? '#111' : '#fff',
-    color: active ? '#fff' : '#000'
+    position:'absolute', top:0, bottom:0,
+    left: `${percent}%`,
+    width: 1, background:'rgba(255,255,255,0.55)'
   };
 }
-
-const appliedBadge: React.CSSProperties = {
-  position:'absolute',
-  right:8, top:8,
-  background:'rgba(17,17,17,0.9)',
-  color:'#fff',
-  padding:'2px 8px',
-  fontSize:11,
-  borderRadius:999
-};
+function gridLineH(percent: number): React.CSSProperties {
+  return {
+    position:'absolute', left:0, right:0,
+    top: `${percent}%`,
+    height: 1, background:'rgba(255,255,255,0.55)'
+  };
+}
