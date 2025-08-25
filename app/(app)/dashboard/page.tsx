@@ -1,7 +1,7 @@
 // app/(app)/dashboard/page.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 export const dynamic = 'force-dynamic';
@@ -13,10 +13,6 @@ type Counts = {
   aiPhotoThisMonth: number;
 };
 
-type Suggestion = { id: string; label: string; priority: 'Høj' | 'Medium' | 'Lav'; text: string; bestTime?: string };
-
-type Tab = 'ai' | 'schedule' | 'performance';
-
 export default function DashboardPage() {
   const [counts, setCounts] = useState<Counts>({
     totalPosts: 0,
@@ -25,67 +21,144 @@ export default function DashboardPage() {
     aiPhotoThisMonth: 0,
   });
   const [loadingCounts, setLoadingCounts] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
+  const [errCounts, setErrCounts] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<Tab>('ai');
+  // Tabs
+  type Tab = 'ai' | 'plan' | 'perf';
+  const [tab, setTab] = useState<Tab>('ai');
 
-  // AI-forslag
-  const [ideas, setIdeas] = useState<Suggestion[]>([]);
-  const [loadingIdeas, setLoadingIdeas] = useState(false);
-  const [ideasMsg, setIdeasMsg] = useState<string | null>(null);
+  // ---- AI-forslag (øverst i AI-fanen) ----
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiMsg, setAiMsg] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  async function loadAISuggestions() {
+    try {
+      setAiLoading(true);
+      setAiMsg(null);
+      const { data: s } = await supabase.auth.getSession();
+      const token = s.session?.access_token;
+      if (!token) { setAiMsg('Ikke logget ind.'); return; }
+      const r = await fetch('/api/ai/suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ topic: 'Generér 3 opslag til min virksomhed', tone: 'neutral/venlig' })
+      });
+      if (!r.ok) { setAiMsg('Fejl: ' + (await r.text())); return; }
+      const data = await r.json();
+      setSuggestions(Array.isArray(data.suggestions) ? data.suggestions.slice(0,3) : []);
+    } catch (e:any) {
+      setAiMsg(e.message || 'Uventet fejl');
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
-  // Hurtigt opslag
-  const [quickBody, setQuickBody] = useState('');
-  const [quickTone, setQuickTone] = useState<'neutral'|'tilbud'|'hyggelig'|'informativ'>('neutral');
-  const [quickOut, setQuickOut] = useState<string | null>(null);
-  const [quickMsg, setQuickMsg] = useState<string | null>(null);
-  const [quickBusy, setQuickBusy] = useState(false);
+  // ---- Hurtigt opslag (AI-fanen) ----
+  const [title, setTitle] = useState('');
+  const [body, setBody]   = useState('');
+  const [postMsg, setPostMsg] = useState<string | null>(null);
+  async function copyText() {
+    const text = (title ? title + '\n' : '') + body;
+    await navigator.clipboard.writeText(text);
+    setPostMsg('Tekst kopieret ✔');
+  }
+  async function savePost() {
+    try {
+      setPostMsg('Gemmer...');
+      const { data: s } = await supabase.auth.getSession();
+      const token = s.session?.access_token;
+      if (!token) { setPostMsg('Ikke logget ind.'); return; }
+      const r = await fetch('/api/posts/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ title, body })
+      });
+      if (!r.ok) { setPostMsg('Fejl: ' + (await r.text())); return; }
+      setPostMsg('Gemt ✔');
+      setTitle(''); setBody('');
+    } catch (e:any) {
+      setPostMsg(e.message || 'Fejl');
+    }
+  }
 
-  // Session/email til API-kald
-  const [email, setEmail] = useState<string>('');
+  // ---- Foto-hjælp (nu placeret UNDER hurtigt opslag) ----
+  const [imageUrl, setImageUrl] = useState('');
+  const [analysis, setAnalysis] = useState<null | {
+    width:number; height:number; aspect_label:string;
+    brightness:number; contrast:number; sharpness:number;
+    verdict:string; suggestions:string[];
+  }>(null);
+  const [photoMsg, setPhotoMsg] = useState<string | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
 
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoMsg('Uploader billede...');
+    const { data: userData } = await supabase.auth.getUser();
+    const uid = userData.user?.id;
+    if (!uid) { setPhotoMsg('Du er ikke logget ind.'); return; }
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+    const path = `${uid}/${Date.now()}.${ext}`;
+    const { error: upErr } = await supabase.storage.from('images').upload(path, file, { cacheControl: '3600', upsert: false });
+    if (upErr) { setPhotoMsg('Upload-fejl: ' + upErr.message); return; }
+    const { data: pub } = supabase.storage.from('images').getPublicUrl(path);
+    setImageUrl(pub.publicUrl);
+    setPhotoMsg('Billede uploadet ✔ Du kan nu analysere.');
+  }
+
+  async function analyzePhoto() {
+    if (!imageUrl) { setPhotoMsg('Indsæt eller upload et billede først.'); return; }
+    setAnalyzing(true); setAnalysis(null); setPhotoMsg(null);
+    try {
+      const resp = await fetch('/api/media/analyze', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_url: imageUrl })
+      });
+      if (!resp.ok) { const t = await resp.text(); setPhotoMsg('Analyse-fejl: ' + t); }
+      else { setAnalysis(await resp.json()); }
+    } catch (e:any) { setPhotoMsg('Analyse-fejl: ' + e.message); }
+    finally { setAnalyzing(false); }
+  }
+
+  // ---- Counts (hero-kort) ----
   useEffect(() => {
     (async () => {
       try {
         setLoadingCounts(true);
         const { data: u } = await supabase.auth.getUser();
-        const mail = u.user?.email;
-        if (!mail) { setErr('Ikke logget ind.'); return; }
-        setEmail(mail);
+        const email = u.user?.email;
+        if (!email) { setErrCounts('Ikke logget ind.'); return; }
 
         const monthStart = new Date();
-        monthStart.setDate(1);
-        monthStart.setHours(0, 0, 0, 0);
+        monthStart.setDate(1); monthStart.setHours(0,0,0,0);
         const startISO = monthStart.toISOString();
 
-        // Opslag denne måned (kun publicerede)
-        const { count: postsThisMonth } = await supabase
-          .from('posts_app')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_email', mail)
-          .eq('status', 'published')
-          .gte('created_at', startISO);
-
-        // Opslag i alt (kun publicerede)
+        // KUN publicerede
         const { count: totalPosts } = await supabase
           .from('posts_app')
           .select('id', { count: 'exact', head: true })
-          .eq('user_email', mail)
+          .eq('user_email', email)
           .eq('status', 'published');
 
-        // AI-forbrug – tekst
+        const { count: postsThisMonth } = await supabase
+          .from('posts_app')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_email', email)
+          .eq('status', 'published')
+          .gte('created_at', startISO);
+
         const { count: aiTextThisMonth } = await supabase
           .from('ai_usage')
           .select('id', { count: 'exact', head: true })
-          .eq('user_email', mail)
+          .eq('user_email', email)
           .eq('kind', 'text')
           .gte('used_at', startISO);
 
-        // AI-forbrug – foto
         const { count: aiPhotoThisMonth } = await supabase
           .from('ai_usage')
           .select('id', { count: 'exact', head: true })
-          .eq('user_email', mail)
+          .eq('user_email', email)
           .eq('kind', 'photo')
           .gte('used_at', startISO);
 
@@ -96,7 +169,7 @@ export default function DashboardPage() {
           aiPhotoThisMonth: aiPhotoThisMonth ?? 0,
         });
       } catch (e:any) {
-        setErr(e.message || 'Kunne ikke hente data');
+        setErrCounts(e.message || 'Kunne ikke hente data');
       } finally {
         setLoadingCounts(false);
       }
@@ -105,260 +178,145 @@ export default function DashboardPage() {
 
   const aiTotal = counts.aiTextThisMonth + counts.aiPhotoThisMonth;
 
-  // Hent AI-forslag (idebank) – 3 ad gangen
-  async function loadIdeas() {
-    try {
-      setIdeasMsg(null);
-      setLoadingIdeas(true);
-      const { data: s } = await supabase.auth.getSession();
-      const token = s.session?.access_token;
-      if (!token) { setIdeasMsg('Ikke logget ind.'); return; }
-
-      const r = await fetch('/api/ai/suggest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({ topic: 'idebank', tone: 'neutral', post_body: '' })
-      });
-      if (!r.ok) {
-        setIdeasMsg('AI-fejl: ' + (await r.text()));
-        return;
-      }
-      const data = await r.json();
-      const arr: string[] = Array.isArray(data?.suggestions) ? data.suggestions.slice(0,3) : [];
-      // Lidt pynt: kategorier + “bedste tidspunkt” placeholders
-      const cats: Array<{label:string;prio:'Høj'|'Medium'|'Lav';best:string}> = [
-        { label: 'Trending emne', prio: 'Høj',   best: 'kl. 10:30' },
-        { label: 'Spørg følgerne', prio: 'Medium', best: 'kl. 18:00' },
-        { label: 'Bag kulisserne', prio: 'Høj',   best: 'kl. 14:00' },
-      ];
-      const mapped: Suggestion[] = (arr.length ? arr : [
-        'Tip: Del dagens fristelser og spørg “Hvad skal vi kalde den nye kage?” 🍰',
-        'Spørgsmål: “Hvilken kaffe drikker du i dag?” ☕️ #kaffetid',
-        'Vis personalets favorit – og hvorfor 🔥',
-      ]).map((t, i) => ({
-        id: String(i+1),
-        label: cats[i % cats.length].label,
-        priority: cats[i % cats.length].prio,
-        text: String(t),
-        bestTime: cats[i % cats.length].best,
-      }));
-      setIdeas(mapped);
-    } catch (e:any) {
-      setIdeasMsg('Kunne ikke hente idéer: ' + e.message);
-    } finally {
-      setLoadingIdeas(false);
-    }
-  }
-
-  useEffect(() => { loadIdeas(); }, []);
-
-  function copy(text: string) {
-    navigator.clipboard.writeText(text).catch(()=>{});
-  }
-
-  async function quickGenerate() {
-    try {
-      setQuickMsg(null);
-      setQuickBusy(true);
-      setQuickOut(null);
-      const { data: s } = await supabase.auth.getSession();
-      const token = s.session?.access_token;
-      if (!token) { setQuickMsg('Ikke logget ind.'); return; }
-
-      const r = await fetch('/api/ai/suggest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({ post_body: quickBody, tone: quickTone })
-      });
-      if (!r.ok) { setQuickMsg('AI-fejl: ' + (await r.text())); return; }
-      const data = await r.json();
-      const out = Array.isArray(data?.suggestions) ? data.suggestions[0] : null;
-      setQuickOut(out || 'Kunne ikke generere et forslag lige nu.');
-    } catch (e:any) {
-      setQuickMsg('Fejl: ' + e.message);
-    } finally {
-      setQuickBusy(false);
-    }
-  }
-
-  const headerRow = useMemo(() => (
-    <section style={rowGrid}>
-      {/* Kort 1: Opslag denne måned */}
-      <div style={card}>
-        <div style={cardTitle}>Opslag denne måned</div>
-        <div style={bigNumber}>{loadingCounts ? '—' : counts.postsThisMonth.toLocaleString('da-DK')}</div>
-        <div style={subText}>I alt: <strong>{loadingCounts ? '—' : counts.totalPosts.toLocaleString('da-DK')}</strong></div>
-      </div>
-
-      {/* Kort 2: AI denne måned */}
-      <div style={card}>
-        <div style={cardTitle}>AI denne måned</div>
-        <div style={bigNumber}>{loadingCounts ? '—' : aiTotal.toLocaleString('da-DK')}</div>
-        <div style={subText}>
-          Tekst: <strong>{loadingCounts ? '—' : counts.aiTextThisMonth}</strong> · Foto: <strong>{loadingCounts ? '—' : counts.aiPhotoThisMonth}</strong>
-        </div>
-      </div>
-
-      {/* Kort 3: Virksomhedsprofil (placeholder) */}
-      <div style={{ ...card, minHeight: 120 }}>
-        <div style={cardTitle}>Virksomhedsprofil</div>
-        <ul style={{ margin: 0, paddingLeft: 16, lineHeight: 1.5 }}>
-          <li>Branche: <strong>Café</strong> (kan ændres)</li>
-          <li>Kanaler: <span>Facebook ✅</span> · <span>Instagram ✅</span></li>
-          <li>Adresse/By: <span>-</span></li>
-          <li>Web: <a href="/" onClick={e=>e.preventDefault()}>—</a></li>
-        </ul>
-        <div style={{ marginTop: 8 }}>
-          <a href="/profile" style={linkButton}>Se profil</a>
-        </div>
-      </div>
-    </section>
-  ), [counts, loadingCounts, aiTotal]);
-
   return (
     <div style={{ display: 'grid', gap: 16 }}>
-      {/* HERO-kort */}
-      {headerRow}
+      {/* HERO-rækken: 1fr 1fr 2fr */}
+      <section
+        style={{
+          display: 'grid',
+          gap: 12,
+          gridTemplateColumns: '1fr 1fr 2fr',
+          alignItems: 'stretch',
+        }}
+      >
+        {/* Kort 1: Opslag denne måned (og total) */}
+        <div style={card}>
+          <div style={cardTitle}>Opslag denne måned</div>
+          <div style={bigNumber}>{loadingCounts ? '—' : counts.postsThisMonth.toLocaleString('da-DK')}</div>
+          <div style={subText}>I alt: <strong>{loadingCounts ? '—' : counts.totalPosts.toLocaleString('da-DK')}</strong></div>
+        </div>
 
-      {/* Faner */}
-      <nav style={tabsBar}>
-        <button
-          onClick={()=>setActiveTab('ai')}
-          aria-pressed={activeTab==='ai'}
-          style={{ ...tabBtn, ...(activeTab==='ai' ? tabBtnActive : {}) }}
-        >AI-assistent</button>
-        <button
-          onClick={()=>setActiveTab('schedule')}
-          aria-pressed={activeTab==='schedule'}
-          style={{ ...tabBtn, ...(activeTab==='schedule' ? tabBtnActive : {}) }}
-        >Planlægning & udgivelse</button>
-        <button
-          onClick={()=>setActiveTab('performance')}
-          aria-pressed={activeTab==='performance'}
-          style={{ ...tabBtn, ...(activeTab==='performance' ? tabBtnActive : {}) }}
-        >Performance</button>
-      </nav>
+        {/* Kort 2: AI denne måned */}
+        <div style={card}>
+          <div style={cardTitle}>AI denne måned</div>
+          <div style={bigNumber}>{loadingCounts ? '—' : aiTotal.toLocaleString('da-DK')}</div>
+          <div style={subText}>
+            Tekst: <strong>{loadingCounts ? '—' : counts.aiTextThisMonth}</strong> · Foto: <strong>{loadingCounts ? '—' : counts.aiPhotoThisMonth}</strong>
+          </div>
+        </div>
 
-      {/* Indhold for faner */}
-      {activeTab === 'ai' && (
-        <>
-          {/* AI Content – idebank */}
-          <section style={panel}>
-            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
-              <h3 style={{ margin:0, fontSize:16 }}>AI-forslag (idebank)</h3>
-              <span style={{ fontSize:12, color:'#666' }}>Personlige idéer baseret på din profil</span>
-              <div style={{ marginLeft:'auto' }}>
-                <button onClick={loadIdeas} disabled={loadingIdeas} style={ghostBtn}>
-                  {loadingIdeas ? 'Henter…' : 'Få nye forslag'}
-                </button>
+        {/* Kort 3: Dobbelt bredde – pladsholder (fx Virksomhedsprofil-overblik) */}
+        <div style={{ ...card, minHeight: 120 }}>
+          {/* TODO: Virksomhedsprofil-overblik (branche, kanaler, adresse, “Se profil”) */}
+        </div>
+      </section>
+
+      {/* Tabs */}
+      <section style={{ display:'flex', gap:8, borderBottom:'1px solid #eee', paddingBottom:8 }}>
+        <TabButton label="AI Assistent" active={tab==='ai'} onClick={()=>setTab('ai')} />
+        <TabButton label="Planlægning & Udgivelse" active={tab==='plan'} onClick={()=>setTab('plan')} />
+        <TabButton label="Performance" active={tab==='perf'} onClick={()=>setTab('perf')} />
+      </section>
+
+      {/* TAB INDHOLD */}
+      {tab === 'ai' && (
+        <section style={{ display:'grid', gap:12 }}>
+          {/* AI-forslag */}
+          <div style={card}>
+            <div style={cardTitle}>AI forslag</div>
+            <div style={{ display:'grid', gap:8 }}>
+              {suggestions.length === 0 ? (
+                <p style={{ color:'#555' }}>Klik “Nye forslag” for at få 3 idéer til opslag.</p>
+              ) : (
+                <ul style={{ margin:0, paddingLeft:18 }}>
+                  {suggestions.map((s,i)=><li key={i}>{s}</li>)}
+                </ul>
+              )}
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                <button onClick={loadAISuggestions} disabled={aiLoading}>{aiLoading ? 'Henter…' : 'Nye forslag'}</button>
+                {aiMsg && <span style={{ color:'#b00' }}>{aiMsg}</span>}
               </div>
             </div>
+          </div>
 
-            {ideasMsg && <p style={{ color:'#b00', marginTop: 0 }}>{ideasMsg}</p>}
-
-            <div style={ideasGrid}>
-              {ideas.map(idea => (
-                <article key={idea.id} style={ideaCard}>
-                  <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
-                    <span style={chip}>{idea.label}</span>
-                    <span style={{ fontSize:12, color:'#666' }}>{idea.priority}</span>
-                    {idea.bestTime && <span style={{ fontSize:12, color:'#666', marginLeft:'auto' }}>Bedst: {idea.bestTime}</span>}
-                  </div>
-                  <p style={{ margin:'0 0 8px 0' }}>{idea.text}</p>
-                  <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                    <button onClick={()=>copy(idea.text)} style={primaryBtn}>Kopiér idé</button>
-                    <a href="/posts/new" style={ghostLink}>Brug i “Nyt opslag”</a>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </section>
-
-          {/* Hurtige værktøjer: a) Hurtigt opslag  b) Foto-hjælp */}
-          <section style={twoCols}>
-            {/* A) Hurtigt opslag */}
-            <div style={panel}>
-              <h3 style={{ marginTop:0, fontSize:16 }}>Hurtigt opslag</h3>
-              <label style={lbl}>Din tekst eller stikord</label>
-              <textarea
-                rows={4}
-                value={quickBody}
-                onChange={e=>setQuickBody(e.target.value)}
-                placeholder="Skriv stikord (fx “fredagstilbud – latte + croissant 49 kr.”)…"
-                style={ta}
-              />
-              <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-                <label style={{ fontSize:13 }}>Tone:</label>
-                <select value={quickTone} onChange={e=>setQuickTone(e.target.value as any)}>
-                  <option value="neutral">Neutral/venlig</option>
-                  <option value="tilbud">Tilbud</option>
-                  <option value="hyggelig">Hyggelig</option>
-                  <option value="informativ">Informativ</option>
-                </select>
-                <button onClick={quickGenerate} disabled={quickBusy || !quickBody.trim()} style={primaryBtn}>
-                  {quickBusy ? 'Genererer…' : 'Generér med AI'}
-                </button>
-                <a href="/posts/new" style={ghostLink}>Åbn “Nyt opslag”</a>
+          {/* Hurtigt opslag */}
+          <div style={card}>
+            <div style={cardTitle}>Hurtigt opslag</div>
+            <div style={{ display:'grid', gap:8, maxWidth: 680 }}>
+              <label>Titel (valgfri)</label>
+              <input value={title} onChange={e=>setTitle(e.target.value)} />
+              <label>Tekst</label>
+              <textarea rows={5} value={body} onChange={e=>setBody(e.target.value)} />
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                <button onClick={savePost}>Gem som udkast</button>
+                <button onClick={copyText}>Kopier tekst</button>
+                {postMsg && <span style={{ color:'#555' }}>{postMsg}</span>}
               </div>
-              {quickMsg && <p style={{ color:'#b00', marginTop:8 }}>{quickMsg}</p>}
-              {quickOut && (
-                <div style={{ marginTop:10, padding:10, border:'1px dashed #ddd', borderRadius:8 }}>
-                  <div style={{ fontSize:12, color:'#666', marginBottom:6 }}>AI-forslag</div>
-                  <p style={{ margin:0 }}>{quickOut}</p>
-                  <div style={{ marginTop:8 }}>
-                    <button onClick={()=>copy(quickOut)} style={ghostBtn}>Kopiér</button>
-                  </div>
-                </div>
+            </div>
+          </div>
+
+          {/* Foto-hjælp — NU UNDER “Hurtigt opslag” */}
+          <div style={card}>
+            <div style={cardTitle}>Foto-hjælp</div>
+            <div style={{ display:'grid', gap:8, maxWidth: 680 }}>
+              <label>Billede-URL (valgfri)</label>
+              <input value={imageUrl} onChange={e=>setImageUrl(e.target.value)} placeholder="https://..." />
+              <label>… eller upload billede</label>
+              <input type="file" accept="image/*" onChange={handleFile} />
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                <button onClick={analyzePhoto} disabled={!imageUrl || analyzing}>{analyzing ? 'Analyserer…' : 'Analyser billede'}</button>
+                {photoMsg && <span style={{ color:'#555' }}>{photoMsg}</span>}
+              </div>
+
+              {analysis && (
+                <section style={{ marginTop: 8, padding: 12, border: '1px solid #ddd', borderRadius: 8 }}>
+                  <p><strong>Størrelse:</strong> {analysis.width}×{analysis.height} ({analysis.aspect_label})</p>
+                  <p><strong>Lys:</strong> {analysis.brightness} — <strong>Kontrast:</strong> {analysis.contrast} — <strong>Skarphed:</strong> {analysis.sharpness}</p>
+                  <p><strong>Vurdering:</strong> {analysis.verdict}</p>
+                  <ul>{analysis.suggestions.map((s,i)=><li key={i}>{s}</li>)}</ul>
+                </section>
               )}
             </div>
-
-            {/* B) Foto-hjælp (placeholder) */}
-            <div style={panel}>
-              <h3 style={{ marginTop:0, fontSize:16 }}>Foto-hjælp</h3>
-              <p style={{ marginTop:0, color:'#555' }}>
-                Upload et billede på siden <a href="/posts/new">Nyt opslag</a> for at få lys/format-feedback.
-              </p>
-              <ul style={{ margin:0, paddingLeft:18, lineHeight:1.6 }}>
-                <li>Tip: Brug 1080×1350 til Instagram feed</li>
-                <li>Naturligt lys → vend motivet mod vinduet</li>
-                <li>Hold motivet i midten – undgå at beskære produktet</li>
-              </ul>
-            </div>
-          </section>
-        </>
-      )}
-
-      {activeTab === 'schedule' && (
-        <section style={panel}>
-          <h3 style={{ marginTop:0, fontSize:16 }}>Planlægning & udgivelse</h3>
-          <p style={{ color:'#555', marginTop:0 }}>
-            Kalender og planlægning kommer her (placeholder). Gå evt. til <a href="/posts">Dine opslag</a>.
-          </p>
+          </div>
         </section>
       )}
 
-      {activeTab === 'performance' && (
-        <section style={panel}>
-          <h3 style={{ marginTop:0, fontSize:16 }}>Performance</h3>
-          <p style={{ color:'#555', marginTop:0 }}>
-            Et simpelt overblik over reach/likes og bedste tidspunkter kommer her (placeholder).
-          </p>
+      {tab === 'plan' && (
+        <section style={{ ...card, minHeight: 220 }}>
+          {/* Pladsholder: Kalender/planlægning kommer her senere */}
+          <p style={{ margin:0, color:'#555' }}>Planlægning & Udgivelse – kommer snart.</p>
         </section>
       )}
 
-      {err && <p style={{ color: '#b00' }}>{err}</p>}
+      {tab === 'perf' && (
+        <section style={{ ...card, minHeight: 220 }}>
+          {/* Pladsholder: Performance/KPI kort kommer her senere */}
+          <p style={{ margin:0, color:'#555' }}>Performance – kommer snart.</p>
+        </section>
+      )}
+
+      {errCounts && <p style={{ color:'#b00' }}>{errCounts}</p>}
     </div>
   );
 }
 
-/* ====== styles (inline objects) ====== */
-
-const rowGrid: React.CSSProperties = {
-  display: 'grid',
-  gap: 12,
-  gridTemplateColumns: '1fr 1fr 2fr', // to små + én dobbelt
-  alignItems: 'stretch',
-};
+function TabButton({ label, active, onClick }:{ label:string; active:boolean; onClick:()=>void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: '8px 12px',
+        border: '1px solid ' + (active ? '#000' : '#ddd'),
+        borderBottom: active ? '2px solid #000' : '1px solid #ddd',
+        borderRadius: 8,
+        background: active ? '#f9f9f9' : '#fff',
+        cursor: 'pointer'
+      }}
+    >
+      {label}
+    </button>
+  );
+}
 
 const card: React.CSSProperties = {
   border: '1px solid #eee',
@@ -366,7 +324,6 @@ const card: React.CSSProperties = {
   padding: 16,
   background: '#fff',
   boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-  minWidth: 220,
 };
 
 const cardTitle: React.CSSProperties = {
@@ -385,99 +342,4 @@ const bigNumber: React.CSSProperties = {
 const subText: React.CSSProperties = {
   fontSize: 13,
   color: '#555',
-};
-
-const tabsBar: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '1fr 1fr 1fr',
-  gap: 8,
-  background: '#f3f3f5',
-  borderRadius: 999,
-  padding: 4,
-};
-
-const tabBtn: React.CSSProperties = {
-  padding: '8px 10px',
-  borderRadius: 999,
-  border: '1px solid transparent',
-  background: 'transparent',
-  cursor: 'pointer',
-};
-
-const tabBtnActive: React.CSSProperties = {
-  background: '#fff',
-  border: '1px solid #ddd',
-};
-
-const panel: React.CSSProperties = {
-  border: '1px solid #eee',
-  borderRadius: 12,
-  padding: 16,
-  background: '#fff',
-};
-
-const ideasGrid: React.CSSProperties = {
-  display: 'grid',
-  gap: 12,
-  gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-};
-
-const ideaCard: React.CSSProperties = {
-  border: '1px solid #eee',
-  borderRadius: 12,
-  padding: 12,
-  background: '#fff',
-  minHeight: 120,
-};
-
-const chip: React.CSSProperties = {
-  fontSize: 12,
-  border: '1px solid #ddd',
-  padding: '2px 8px',
-  borderRadius: 999,
-  background: '#fafafa',
-};
-
-const twoCols: React.CSSProperties = {
-  display: 'grid',
-  gap: 12,
-  gridTemplateColumns: '1fr 1fr',
-};
-
-const lbl: React.CSSProperties = { fontSize: 12, color:'#666', marginBottom: 4, display:'block' };
-const ta: React.CSSProperties = { width:'100%', padding:8, border:'1px solid #ddd', borderRadius:8, resize:'vertical' };
-
-const primaryBtn: React.CSSProperties = {
-  padding: '8px 10px',
-  border: '1px solid #222',
-  background: '#111',
-  color: '#fff',
-  borderRadius: 8,
-  cursor: 'pointer',
-};
-
-const ghostBtn: React.CSSProperties = {
-  padding: '8px 10px',
-  border: '1px solid #ddd',
-  background: '#fff',
-  borderRadius: 8,
-  cursor: 'pointer',
-};
-
-const linkButton: React.CSSProperties = {
-  padding: '6px 10px',
-  border: '1px solid #ddd',
-  borderRadius: 8,
-  textDecoration: 'none',
-  color: 'inherit',
-  background: '#fff',
-};
-
-const ghostLink: React.CSSProperties = {
-  padding: '8px 10px',
-  border: '1px solid #ddd',
-  borderRadius: 8,
-  textDecoration: 'none',
-  color: 'inherit',
-  background: '#fff',
 };
