@@ -25,6 +25,7 @@ type Analysis = {
 } | null;
 
 type TabKey = 'ai' | 'plan' | 'perf';
+type Aspect = 'orig' | '1:1' | '4:5' | '1.91:1';
 
 export default function DashboardPage() {
   // ---------- HERO-KORT ----------
@@ -58,11 +59,23 @@ export default function DashboardPage() {
 
   // ---------- FOTO-HJÆLP ----------
   const [imageUrl, setImageUrl] = useState(''); // upload-resultat
+  const [uploadBusy, setUploadBusy] = useState(false);
+
+  // Analyse
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<Analysis>(null);
   const [photoChanFB, setPhotoChanFB] = useState(true);
   const [photoChanIG, setPhotoChanIG] = useState(true);
-  const [uploadBusy, setUploadBusy] = useState(false);
+
+  // Crop/komposition (preview, P1)
+  const [cropAspect, setCropAspect] = useState<Aspect>('orig');
+  const [posX, setPosX] = useState(50); // 0..100 (object-position X)
+  const [posY, setPosY] = useState(50); // 0..100 (object-position Y)
+  const [showGrid, setShowGrid] = useState(false);
+  const [appliedCrop, setAppliedCrop] = useState<{ aspect: Aspect; posX: number; posY: number } | null>(null);
+
+  // Farver & lys – noter (tekstsuggestions "nu")
+  const [colorNotes, setColorNotes] = useState<string[]>([]);
 
   // ---------- VIRKSOMHEDSSNAPSHOT ----------
   const [orgName, setOrgName] = useState<string>('');
@@ -158,7 +171,7 @@ export default function DashboardPage() {
         }
       } catch {}
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Første AI-forslag
@@ -247,15 +260,17 @@ export default function DashboardPage() {
 
       setStatusMsg('Gemt som udkast ✔');
       setBody('');
-      // behold evt. quickImageUrl/imageUrl så man kan gemme flere
     } catch (e:any) { setStatusMsg('Fejl: ' + e.message); }
     finally { setSaving(false); }
   }
 
   // -------- Foto upload (Storage) --------
-  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  async function onFileInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (f) fileInputPick(f);
+  }
+
+  async function fileInputPick(file: File) {
     setUploadBusy(true);
     setStatusMsg('Uploader billede…');
     try {
@@ -269,7 +284,7 @@ export default function DashboardPage() {
       if (upErr) { setStatusMsg('Upload-fejl: ' + upErr.message); return; }
       const { data: pub } = supabase.storage.from('images').getPublicUrl(path);
       setImageUrl(pub.publicUrl);
-      setQuickImageUrl(pub.publicUrl); // brug direkte i Hurtigt opslag
+      setQuickImageUrl(pub.publicUrl);
       setStatusMsg('Billede uploadet ✔');
     } catch (e:any) { setStatusMsg('Fejl: ' + e.message); }
     finally { setUploadBusy(false); }
@@ -295,8 +310,36 @@ export default function DashboardPage() {
     finally { setAnalyzing(false); }
   }
 
+  // -------- Crop helpers (preview P1) --------
+  function setAspect(a: Aspect) { setCropAspect(a); }
+  function clamp(n:number, min=0, max=100) { return Math.max(min, Math.min(max, n)); }
+  function nudge(dir:'left'|'right'|'up'|'down', pct=3) {
+    if (dir === 'left') setPosX(x => clamp(x - pct));
+    if (dir === 'right') setPosX(x => clamp(x + pct));
+    if (dir === 'up') setPosY(y => clamp(y - pct));
+    if (dir === 'down') setPosY(y => clamp(y + pct));
+  }
+  function thirds() { setShowGrid(s => !s); }
+  function moveToThird() {
+    // enkel “move subject”: skift mellem ~33% og ~66% vandret
+    setPosX(x => (x < 50 ? 66 : 33));
+  }
+  function previewScroll() {
+    const el = document.getElementById('photo-preview');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  function applyCrop() {
+    setAppliedCrop({ aspect: cropAspect, posX, posY });
+    // (P2) Gem som kopi i Storage – kommer senere
+  }
+  function addColorNote(s: string) {
+    setColorNotes(list => (list.includes(s) ? list : [...list, s]));
+  }
+  function clearColorNotes() { setColorNotes([]); }
+
   const aiTotal = counts.aiTextThisMonth + counts.aiPhotoThisMonth;
 
+  // ---------- UI ----------
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       {/* Øverste række */}
@@ -397,7 +440,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Hurtigt opslag */}
+          {/* Hurtigt opslag (UFORTÆNKT) */}
           <div id="quick-post" style={cardStyle}>
             <div style={cardTitle}>Hurtigt opslag</div>
             <div style={{ display: 'grid', gap: 8, maxWidth: 720 }}>
@@ -425,7 +468,6 @@ export default function DashboardPage() {
                 <Link href="/posts" style={pillLink}>Gå til dine opslag →</Link>
               </div>
 
-              {/* Billede preview der følger opslaget */}
               {(quickImageUrl || imageUrl) && (
                 <div style={{ marginTop: 8 }}>
                   <img
@@ -438,11 +480,11 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Foto-hjælp (upload + analyse) */}
+          {/* Foto-hjælp (upload + VENSTRE: crop/rengøring/farver · HØJRE: preview/kanaler/analyse) */}
           <div style={cardStyle}>
             <div style={cardTitle}>Foto-hjælp</div>
 
-            {/* Upload-zone (½-bredde følelse via maxWidth) */}
+            {/* Upload-zone (øverst) */}
             <div
               onDragOver={e => e.preventDefault()}
               onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) fileInputPick(f); }}
@@ -453,7 +495,8 @@ export default function DashboardPage() {
                 minHeight: 140,
                 display: 'grid',
                 placeItems: 'center',
-                maxWidth: 720
+                maxWidth: 720,
+                marginBottom: 12
               }}
             >
               <div style={{ textAlign:'center' }}>
@@ -473,54 +516,175 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Kontroller + analyse */}
-            <div style={{ display:'flex', gap:12, alignItems:'center', flexWrap:'wrap', marginTop: 10 }}>
-              <label style={{ fontSize:12, color:'#555' }}>
-                <input type="checkbox" checked={photoChanFB} onChange={e=>setPhotoChanFB(e.target.checked)} /> Facebook
-              </label>
-              <label style={{ fontSize:12, color:'#555' }}>
-                <input type="checkbox" checked={photoChanIG} onChange={e=>setPhotoChanIG(e.target.checked)} /> Instagram
-              </label>
+            {/* To kolonner */}
+            <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
+              {/* VENSTRE: Beskæring & komposition · Rengøring · Farver & lys */}
+              <div style={{ flex:'0 1 360px', minWidth: 300, display:'grid', gap:12 }}>
+                {/* 1) Beskæring & komposition */}
+                <section style={sectionBox}>
+                  <div style={sectionTitle}>Beskæring & komposition</div>
 
-              <button type="button" onClick={analyzePhoto} disabled={!imageUrl || analyzing}>
-                {analyzing ? 'Analyserer…' : 'Analyser billede'}
-              </button>
+                  <div style={{ fontSize:12, color:'#666', marginBottom:6 }}>Hurtigvalg (1-klik preview)</div>
+                  <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                    {/* Instagram */}
+                    <span style={badge}>Instagram</span>
+                    <button type="button" onClick={() => setAspect('1:1')}
+                      style={cropBtn(cropAspect==='1:1')}>1:1 (1080×1080)</button>
+                    <button type="button" onClick={() => setAspect('4:5')}
+                      style={cropBtn(cropAspect==='4:5')}>4:5 (1080×1350)</button>
+                  </div>
+                  <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginTop:6 }}>
+                    {/* Facebook */}
+                    <span style={badge}>Facebook</span>
+                    <button type="button" onClick={() => setAspect('4:5')}
+                      style={cropBtn(cropAspect==='4:5')}>4:5 (1080×1350)</button>
+                    <button type="button" onClick={() => setAspect('1.91:1')}
+                      style={cropBtn(cropAspect==='1.91:1')}>1.91:1 (1200×630)</button>
+                  </div>
 
-              {imageUrl && (
-                <button type="button" onClick={() => { setQuickImageUrl(imageUrl); scrollToQuick(); }}>
-                  Brug i opslag
-                </button>
-              )}
+                  {/* Auto-komposition */}
+                  <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginTop:10 }}>
+                    <button type="button" onClick={thirds} style={smallBtn}>
+                      {showGrid ? 'Skjul tredjedels-gitter' : 'Vis tredjedels-gitter'}
+                    </button>
+                    <button type="button" onClick={moveToThird} style={smallBtn}>
+                      Flyt motiv mod tredjedel
+                    </button>
+                  </div>
+
+                  {/* Preview/Anvend */}
+                  <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginTop:10 }}>
+                    <button type="button" onClick={previewScroll}>Preview</button>
+                    <button type="button" onClick={applyCrop}>Anvend</button>
+                    <button type="button" disabled title="Kommer snart">Gem som kopi (P2)</button>
+                  </div>
+
+                  <p style={{ fontSize:12, color:'#666', marginTop:8 }}>
+                    Tip: Hold fokus på hovedmotiv – undgå for meget “luft”.
+                  </p>
+                </section>
+
+                {/* 2) Rengøring */}
+                <section style={sectionBox}>
+                  <div style={sectionTitle}>Rengøring</div>
+
+                  <div style={{ fontSize:12, color:'#666', marginBottom:6 }}>Skjul distraktion (via beskæring)</div>
+                  <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                    <button type="button" onClick={() => nudge('left', 3)} style={smallBtn}>
+                      Beskær 3% venstre
+                    </button>
+                    <button type="button" onClick={() => nudge('right', 3)} style={smallBtn}>
+                      Beskær 3% højre
+                    </button>
+                    <button type="button" onClick={() => nudge('up', 3)} style={smallBtn}>
+                      Beskær 3% top
+                    </button>
+                    <button type="button" onClick={() => nudge('down', 3)} style={smallBtn}>
+                      Beskær 3% bund
+                    </button>
+                  </div>
+
+                  <div style={{ fontSize:12, color:'#666', margin:'10px 0 6px' }}>AI-fjernelse (låst i Gratis)</div>
+                  <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                    <button type="button" disabled title="Opgradér for at bruge" style={lockedBtn}>🔒 Fjern skeen til højre</button>
+                    <button type="button" disabled title="Opgradér for at bruge" style={lockedBtn}>🔒 Reducér vandkaraflen</button>
+                  </div>
+                </section>
+
+                {/* 3) Farver & lys */}
+                <section style={sectionBox}>
+                  <div style={sectionTitle}>Farver & lys</div>
+                  <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                    <button type="button" onClick={() => addColorNote('Giv billedet mere varme (café-stemning).')} style={smallBtn}>
+                      + Varme (café)
+                    </button>
+                    <button type="button" onClick={() => addColorNote('Lidt mere kontrast/mætning, så motivet popper.')} style={smallBtn}>
+                      + Kontrast/mætning
+                    </button>
+                    <button type="button" onClick={() => addColorNote('Lidt ekstra lys på desserten (hero shot).')} style={smallBtn}>
+                      + Lys på motiv
+                    </button>
+                    <button type="button" onClick={clearColorNotes} style={smallBtn}>Ryd noter</button>
+                  </div>
+                  {colorNotes.length > 0 && (
+                    <ul style={{ marginTop:8 }}>
+                      {colorNotes.map((n,i) => <li key={i} style={{ fontSize:13 }}>{n}</li>)}
+                    </ul>
+                  )}
+                </section>
+              </div>
+
+              {/* HØJRE: Preview + kanaler + analyse */}
+              <div style={{ flex:'1 1 420px', minWidth: 320 }}>
+                {/* Kontroller */}
+                <div style={{ display:'flex', gap:12, alignItems:'center', flexWrap:'wrap', marginBottom:8 }}>
+                  <label style={{ fontSize:12, color:'#555' }}>
+                    <input type="checkbox" checked={photoChanFB} onChange={e=>setPhotoChanFB(e.target.checked)} /> Facebook
+                  </label>
+                  <label style={{ fontSize:12, color:'#555' }}>
+                    <input type="checkbox" checked={photoChanIG} onChange={e=>setPhotoChanIG(e.target.checked)} /> Instagram
+                  </label>
+
+                  <button type="button" onClick={analyzePhoto} disabled={!imageUrl || analyzing}>
+                    {analyzing ? 'Analyserer…' : 'Analyser billede'}
+                  </button>
+
+                  {imageUrl && (
+                    <button type="button" onClick={() => { setQuickImageUrl(imageUrl); scrollToQuick(); }}>
+                      Brug i opslag
+                    </button>
+                  )}
+                </div>
+
+                {/* Preview */}
+                <div id="photo-preview" style={previewWrap(cropAspect)}>
+                  {imageUrl ? (
+                    <>
+                      <img
+                        src={imageUrl}
+                        alt="Preview"
+                        style={{
+                          width:'100%', height:'100%',
+                          objectFit:'cover',
+                          objectPosition: `${posX}% ${posY}%`,
+                          display:'block'
+                        }}
+                      />
+                      {showGrid && <ThirdsGrid />}
+                      {appliedCrop && (
+                        <div style={appliedBadge}>Anvendt</div>
+                      )}
+                    </>
+                  ) : (
+                    <div style={{ display:'grid', placeItems:'center', color:'#666', height:'100%' }}>
+                      Intet billede endnu
+                    </div>
+                  )}
+                </div>
+
+                {/* Feedback fra analyse */}
+                {analysis && (
+                  <section style={{ marginTop: 12, padding: 10, border: '1px solid #eee', borderRadius: 8 }}>
+                    <div style={{ fontWeight: 600, marginBottom: 6 }}>Foto-feedback</div>
+                    <p><strong>Størrelse:</strong> {analysis.width}×{analysis.height} ({analysis.aspect_label})</p>
+                    <p>
+                      <strong>Lys (0-255):</strong> {analysis.brightness} — <strong>Kontrast:</strong> {analysis.contrast} — <strong>Skarphed:</strong> {analysis.sharpness}
+                    </p>
+                    <p><strong>Vurdering:</strong> {analysis.verdict}</p>
+                    <ul>
+                      {analysis.suggestions.map((s, i) => <li key={i}>{s}</li>)}
+                    </ul>
+                  </section>
+                )}
+              </div>
             </div>
 
-            {/* Preview */}
-            {imageUrl && (
-              <div style={{ marginTop: 12 }}>
-                <img src={imageUrl} alt="Upload" style={{ maxWidth: '100%', borderRadius: 8, border:'1px solid #eee' }} />
-              </div>
-            )}
-
-            {/* Feedback */}
-            {analysis && (
-              <section style={{ marginTop: 12, padding: 10, border: '1px solid #eee', borderRadius: 8 }}>
-                <div style={{ fontWeight: 600, marginBottom: 6 }}>Foto-feedback</div>
-                <p><strong>Størrelse:</strong> {analysis.width}×{analysis.height} ({analysis.aspect_label})</p>
-                <p>
-                  <strong>Lys (0-255):</strong> {analysis.brightness} — <strong>Kontrast:</strong> {analysis.contrast} — <strong>Skarphed:</strong> {analysis.sharpness}
-                </p>
-                <p><strong>Vurdering:</strong> {analysis.verdict}</p>
-                <ul>
-                  {analysis.suggestions.map((s, i) => <li key={i}>{s}</li>)}
-                </ul>
-              </section>
+            {statusMsg && (
+              <p style={{ color: statusMsg.startsWith('Fejl') ? '#b00' : '#222', marginTop:8 }}>
+                {statusMsg}
+              </p>
             )}
           </div>
-
-          {statusMsg && (
-            <p style={{ color: statusMsg.startsWith('Fejl') ? '#b00' : '#222' }}>
-              {statusMsg}
-            </p>
-          )}
         </section>
       )}
 
@@ -544,30 +708,32 @@ export default function DashboardPage() {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  function onFileInput(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (f) fileInputPick(f);
+  // Preview box med aspectRatio
+  function previewWrap(a: Aspect): React.CSSProperties {
+    const aspect = a === '1:1' ? '1 / 1' : a === '4:5' ? '4 / 5' : a === '1.91:1' ? '1.91 / 1' : undefined;
+    return {
+      border:'1px solid #eee',
+      borderRadius: 12,
+      overflow:'hidden',
+      width: '100%',
+      maxWidth: 720,
+      aspectRatio: aspect, // bruger CSS native; hvis undefined = fri højde (orig)
+      minHeight: aspect ? undefined : 240,
+      position: 'relative',
+      background:'#fafafa'
+    };
   }
 
-  async function fileInputPick(file: File) {
-    // same as handleFile but accepts a File object
-    setUploadBusy(true);
-    setStatusMsg('Uploader billede…');
-    try {
-      const { data: userData } = await supabase.auth.getUser();
-      const uid = userData.user?.id;
-      if (!uid) { setStatusMsg('Ikke logget ind.'); return; }
-      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-      const path = `${uid}/${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage.from('images')
-        .upload(path, file, { cacheControl: '3600', upsert: false });
-      if (upErr) { setStatusMsg('Upload-fejl: ' + upErr.message); return; }
-      const { data: pub } = supabase.storage.from('images').getPublicUrl(path);
-      setImageUrl(pub.publicUrl);
-      setQuickImageUrl(pub.publicUrl);
-      setStatusMsg('Billede uploadet ✔');
-    } catch (e:any) { setStatusMsg('Fejl: ' + e.message); }
-    finally { setUploadBusy(false); }
+  function ThirdsGrid() {
+    const line: React.CSSProperties = { position:'absolute', background:'rgba(255,255,255,0.8)', pointerEvents:'none' };
+    return (
+      <>
+        <div style={{ ...line, top:0, bottom:0, left:'33.333%', width:1 }} />
+        <div style={{ ...line, top:0, bottom:0, left:'66.666%', width:1 }} />
+        <div style={{ ...line, left:0, right:0, top:'33.333%', height:1 }} />
+        <div style={{ ...line, left:0, right:0, top:'66.666%', height:1 }} />
+      </>
+    );
   }
 }
 
@@ -635,4 +801,57 @@ const tabActive: React.CSSProperties = {
   background: '#111',
   color: '#fff',
   borderColor: '#111',
+};
+
+const sectionBox: React.CSSProperties = {
+  border:'1px solid #f0f0f0',
+  borderRadius: 10,
+  padding: 12,
+  background:'#fcfcfc'
+};
+
+const sectionTitle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 600,
+  color:'#333',
+  marginBottom: 6
+};
+
+const badge: React.CSSProperties = {
+  fontSize: 11, color:'#444', background:'#f3f3f3', border:'1px solid #e5e5e5',
+  padding:'2px 8px', borderRadius: 999
+};
+
+const smallBtn: React.CSSProperties = {
+  fontSize: 12,
+  padding: '6px 10px',
+  border: '1px solid #ddd',
+  background: '#fff',
+  borderRadius: 8,
+  cursor: 'pointer'
+};
+
+const lockedBtn: React.CSSProperties = {
+  ...smallBtn,
+  opacity: 0.6,
+  cursor: 'not-allowed' as const
+};
+
+function cropBtn(active:boolean): React.CSSProperties {
+  return {
+    ...smallBtn,
+    borderColor: active ? '#111' : '#ddd',
+    background: active ? '#111' : '#fff',
+    color: active ? '#fff' : '#000'
+  };
+}
+
+const appliedBadge: React.CSSProperties = {
+  position:'absolute',
+  right:8, top:8,
+  background:'rgba(17,17,17,0.9)',
+  color:'#fff',
+  padding:'2px 8px',
+  fontSize:11,
+  borderRadius:999
 };
