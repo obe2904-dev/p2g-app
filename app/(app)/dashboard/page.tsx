@@ -38,7 +38,7 @@ export default function DashboardPage() {
       </nav>
 
       {/* Indhold */}
-      {activeTab === 'ai' && <TabAiAssistant onAiTextBump={handleAiTextBump} />}
+      {activeTab === 'ai' && <TabAiAssistant onAiTextUse={handleAiTextBump} />}
       {activeTab === 'plan' && <TabPlanning />}
       {activeTab === 'perf' && <TabPerformance />}
     </div>
