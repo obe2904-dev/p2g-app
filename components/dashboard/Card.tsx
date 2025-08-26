@@ -1,48 +1,38 @@
-// components/dashboard/Card.tsx
-'use client';
-
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode, CSSProperties } from 'react';
 
 type CardProps = {
-  /** Lille grå titel øverst i kortet (valgfri) */
-  title?: ReactNode;
-  /** Højre-justeret område i headeren (fx knapper/filtre) (valgfri) */
-  right?: ReactNode;
   children: ReactNode;
+  title?: string;            // ← NY
+  right?: ReactNode;         // ← (valgfri) fx en knap i højre side
   style?: CSSProperties;
 };
 
-export default function Card({ title, right, children, style }: CardProps) {
+export default function Card({ children, title, right, style }: CardProps) {
   return (
-    <section style={{ ...cardStyle, ...style }}>
+    <div
+      style={{
+        border: '1px solid #eee',
+        borderRadius: 12,
+        padding: 16,
+        background: '#fff',
+        boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+        ...style,
+      }}
+    >
       {(title || right) && (
-        <div style={headerStyle}>
-          {title ? <div style={cardTitle}>{title}</div> : <span />}
-          {right ? <div>{right}</div> : null}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 6,
+          }}
+        >
+          {title && <div style={{ fontSize: 12, color: '#666' }}>{title}</div>}
+          {right}
         </div>
       )}
       {children}
-    </section>
+    </div>
   );
 }
-
-export const cardStyle: CSSProperties = {
-  border: '1px solid #eee',
-  borderRadius: 12,
-  padding: 16,
-  background: '#fff',
-  boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-};
-
-export const cardTitle: CSSProperties = {
-  fontSize: 12,
-  color: '#666',
-};
-
-const headerStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: 8,
-  marginBottom: 6,
-};
