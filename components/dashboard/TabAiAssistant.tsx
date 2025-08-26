@@ -1,4 +1,4 @@
- 'use client';
+'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -13,17 +13,6 @@ type SuggestionMeta = {
   engagement: 'Høj' | 'Mellem';
   bestTime: string;
 };
-
-type Analysis = {
-  width: number;
-  height: number;
-  aspect_label: string;
-  brightness: number;
-  contrast: number;
-  sharpness: number;
-  verdict: string;
-  suggestions: string[];
-} | null;
 
 export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => void }) {
   // -------- Platform-valg --------
@@ -41,19 +30,16 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
   const [saving, setSaving] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
-  // -------- Foto & video (beta) --------
-  const [imageUrl, setImageUrl] = useState<string>('');     // upload preview/valg
-  const [quickImageUrl, setQuickImageUrl] = useState('');   // følger “Hurtigt opslag”
-  const [uploadBusy, setUploadBusy] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [analysis, setAnalysis] = useState<Analysis>(null);
+  // -------- Foto & video (fase 1 – lokal preview) --------
+  const [photoPreview, setPhotoPreview] = useState<string>(''); // dataURL/ObjectURL lokalt
+  const [quickImageUrl, setQuickImageUrl] = useState<string>(''); // knyttes til Hurtigt opslag
 
-  // Meta chips over forslag (UI-only)
+  // Små “meta-chips” (kun UI)
   const metas: Record<'facebook' | 'instagram', SuggestionMeta[]> = useMemo(() => ({
     facebook: [
-      { type: 'Community',    engagement: 'Høj',   bestTime: 'kl. 13:00' },
-      { type: 'Spørgsmål',    engagement: 'Mellem',bestTime: 'kl. 15:00' },
-      { type: 'Lærings-tip',  engagement: 'Høj',   bestTime: 'kl. 11:00' },
+      { type: 'Community', engagement: 'Høj',   bestTime: 'kl. 13:00' },
+      { type: 'Spørgsmål', engagement: 'Mellem', bestTime: 'kl. 15:00' },
+      { type: 'Lærings-tip', engagement: 'Høj',  bestTime: 'kl. 11:00' },
     ],
     instagram: [
       { type: 'Visuel story', engagement: 'Høj',   bestTime: 'kl. 14:00' },
@@ -62,7 +48,7 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
     ],
   }), []);
 
-  // Platform skift → nulstil visning af forslag
+  // Reset forslag ved platformskift
   useEffect(() => { setSuggestions([]); setSugErr(null); }, [platform]);
 
   async function refreshSuggestions() {
@@ -75,6 +61,7 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
       if (!token) throw new Error('Ikke logget ind');
 
       const channelHint = ` Kanaler: ${platform === 'facebook' ? 'Facebook' : 'Instagram'}`;
+
       const resp = await fetch('/api/ai/suggest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
@@ -89,7 +76,7 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
       const arr = Array.isArray(data.suggestions) ? data.suggestions.slice(0, 3) : [];
       setSuggestions(arr);
 
-      // Lokal tæller (HeroRow kan lytte via prop)
+      // Lokal tæller-løft (HeroRow kan lytte via prop)
       onAiTextUse?.();
     } catch (e: any) {
       setSugErr(e.message || 'Kunne ikke hente forslag');
@@ -102,6 +89,11 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
   function pickSuggestion(s: string) {
     setBody(s);
     scrollToQuick();
+  }
+
+  function scrollToQuick() {
+    const el = document.getElementById('quick-post');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   async function improveWithAI() {
@@ -142,56 +134,21 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
       setStatusMsg('Gemt som udkast ✔');
       setTitle('');
       setBody('');
-      // bevar evt. quickImageUrl hvis man vil genbruge samme billede
+      // behold quickImageUrl – det kan være rart at bruge igen
     } catch (e:any) { setStatusMsg('Fejl: ' + e.message); }
     finally { setSaving(false); }
   }
 
-  // ---------- Foto: upload ----------
-  function onFileInput(e: React.ChangeEvent<HTMLInputElement>) {
+  // Foto (lokal preview)
+  function onPickLocalPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
-    if (f) fileInputPick(f);
+    if (!f) return;
+    const url = URL.createObjectURL(f); // lokal, hurtig preview
+    setPhotoPreview(url);
   }
-
-  async function fileInputPick(file: File) {
-    setUploadBusy(true);
-    setStatusMsg('Uploader billede…');
-    try {
-      const { data: userData } = await supabase.auth.getUser();
-      const uid = userData.user?.id;
-      if (!uid) { setStatusMsg('Ikke logget ind.'); return; }
-      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-      const path = `${uid}/${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage.from('images')
-        .upload(path, file, { cacheControl: '3600', upsert: false });
-      if (upErr) { setStatusMsg('Upload-fejl: ' + upErr.message); return; }
-      const { data: pub } = supabase.storage.from('images').getPublicUrl(path);
-      setImageUrl(pub.publicUrl);
-      setStatusMsg('Billede uploadet ✔');
-    } catch (e:any) { setStatusMsg('Fejl: ' + e.message); }
-    finally { setUploadBusy(false); }
-  }
-
-  // ---------- Foto: analyse ----------
-  async function analyzePhoto() {
-    if (!imageUrl) { setStatusMsg('Upload et billede først.'); return; }
-    setAnalyzing(true); setAnalysis(null); setStatusMsg(null);
-    try {
-      const channels = platform ? [platform] : [];
-      const resp = await fetch('/api/media/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image_url: imageUrl, channels })
-      });
-      if (!resp.ok) setStatusMsg('Analyse-fejl: ' + (await resp.text()));
-      else setAnalysis(await resp.json());
-    } catch (e:any) { setStatusMsg('Analyse-fejl: ' + e.message); }
-    finally { setAnalyzing(false); }
-  }
-
-  function useInQuickPost() {
-    if (!imageUrl) return;
-    setQuickImageUrl(imageUrl);
+  function usePhotoInPost() {
+    if (!photoPreview) return;
+    setQuickImageUrl(photoPreview);
     scrollToQuick();
   }
 
@@ -201,11 +158,6 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
       {text}
     </span>
   );
-
-  function scrollToQuick() {
-    const el = document.getElementById('quick-post');
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
 
   return (
     <section style={{ display: 'grid', gap: 16 }}>
@@ -302,129 +254,141 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
         </Card>
       </div>
 
-      {/* Hurtigt opslag */}
-      <Card title={`Hurtigt opslag ${platform ? `(${platform === 'facebook' ? 'Facebook' : 'Instagram'})` : ''}`} id="quick-post">
-        <div style={{ display:'grid', gap: 8, maxWidth: 720 }}>
-          <label style={label}>Titel (valgfri)</label>
-          <input value={title} onChange={e=>setTitle(e.target.value)} />
+      {/* TO-KOLONNE LAYOUT: Hurtigt opslag (venstre) + Foto & video (højre) */}
+      <div
+        style={{
+          display:'grid',
+          gap:12,
+          gridTemplateColumns:'repeat(auto-fit, minmax(340px, 1fr))',
+          alignItems:'start'
+        }}
+      >
+        {/* Hurtigt opslag */}
+        <Card title={`Hurtigt opslag ${platform ? `(${platform === 'facebook' ? 'Facebook' : 'Instagram'})` : ''}`} id="quick-post">
+          <div style={{ display:'grid', gap: 8 }}>
+            <label style={label}>Titel (valgfri)</label>
+            <input value={title} onChange={e=>setTitle(e.target.value)} />
 
-          <label style={label}>Tekst</label>
-          <textarea
-            rows={6}
-            value={body}
-            onChange={e=>setBody(e.target.value)}
-            placeholder={
-              platform === 'instagram'
-                ? 'Skriv din billedtekst… brug evt. emojis og 5-10 hashtags.'
-                : platform === 'facebook'
-                  ? 'Skriv dit opslag… stil gerne et spørgsmål for at få flere kommentarer.'
-                  : 'Sæt et AI-forslag ind eller skriv selv…'
-            }
-          />
+            <label style={label}>Tekst</label>
+            <textarea
+              rows={6}
+              value={body}
+              onChange={e=>setBody(e.target.value)}
+              placeholder={
+                platform === 'instagram'
+                  ? 'Skriv din billedtekst… brug evt. emojis og 5-10 hashtags.'
+                  : platform === 'facebook'
+                    ? 'Skriv dit opslag… stil gerne et spørgsmål for at få flere kommentarer.'
+                    : 'Sæt et AI-forslag ind eller skriv selv…'
+              }
+            />
 
-          {/* Mini AI-assistent */}
-          <div style={{ display:'flex', gap: 8, alignItems:'center', flexWrap:'wrap' }}>
-            <span style={{ fontSize: 12, color:'#666' }}>Tone:</span>
-            <select value={tone} onChange={e=>setTone(e.target.value as Tone)}>
-              <option value="neutral">Neutral/Venlig</option>
-              <option value="tilbud">Tilbud</option>
-              <option value="informativ">Informativ</option>
-              <option value="hyggelig">Hyggelig</option>
-            </select>
+            {/* Mini AI-assistent */}
+            <div style={{ display:'flex', gap: 8, alignItems:'center', flexWrap:'wrap' }}>
+              <span style={{ fontSize: 12, color:'#666' }}>Tone:</span>
+              <select value={tone} onChange={e=>setTone(e.target.value as Tone)}>
+                <option value="neutral">Neutral/Venlig</option>
+                <option value="tilbud">Tilbud</option>
+                <option value="informativ">Informativ</option>
+                <option value="hyggelig">Hyggelig</option>
+              </select>
 
-            <button type="button" onClick={improveWithAI} style={btn}>
-              Forbedr med AI
-            </button>
-            <button type="button" onClick={saveDraft} disabled={saving} style={btn}>
-              {saving ? 'Gemmer…' : 'Gem som udkast'}
-            </button>
-            <Link href="/posts" style={pillLink}>Gå til dine opslag →</Link>
-          </div>
-
-          {/* Billede preview der følger opslaget */}
-          {quickImageUrl && (
-            <div style={{ marginTop: 8 }}>
-              <img
-                src={quickImageUrl}
-                alt="Valgt billede"
-                style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid #eee' }}
-              />
+              <button type="button" onClick={improveWithAI} style={btn}>
+                Forbedr med AI
+              </button>
+              <button type="button" onClick={saveDraft} disabled={saving} style={btn}>
+                {saving ? 'Gemmer…' : 'Gem som udkast'}
+              </button>
+              <Link href="/posts" style={pillLink}>Gå til dine opslag →</Link>
             </div>
-          )}
-        </div>
 
-        {statusMsg && <p style={{ marginTop: 8, color: statusMsg.startsWith('Fejl') ? '#b00' : '#222' }}>{statusMsg}</p>}
-      </Card>
+            {/* Billede knyttet til opslaget (fra Foto & video) */}
+            {quickImageUrl && (
+              <div style={{ marginTop: 8 }}>
+                <img
+                  src={quickImageUrl}
+                  alt="Valgt billede"
+                  style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid #eee' }}
+                />
+              </div>
+            )}
 
-      {/* Foto & video (beta) */}
-      <Card title="Foto & video (beta)">
-        {/* Upload-zone (halv-bredde følelse) */}
-        <div
-          onDragOver={e => e.preventDefault()}
-          onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) fileInputPick(f); }}
-          style={{
-            border: '2px dashed #ddd',
-            borderRadius: 12,
-            padding: 20,
-            minHeight: 140,
-            display: 'grid',
-            placeItems: 'center',
-            maxWidth: 720,
-            marginBottom: 10
-          }}
-        >
-          <div style={{ textAlign:'center' }}>
-            <div style={{ fontSize: 18, marginBottom: 8 }}>Upload et billede</div>
-            <div style={{ color:'#666', marginBottom: 10 }}>
-              Få AI-feedback på lys, format og komposition
-            </div>
-            <label
-              style={{
-                display:'inline-block', padding:'10px 14px', border:'1px solid #111',
-                borderRadius:8, cursor:'pointer', background:'#111', color:'#fff'
-              }}
-            >
-              {uploadBusy ? 'Uploader…' : 'Vælg fil'}
-              <input type="file" accept="image/*" onChange={onFileInput} style={{ display:'none' }} />
-            </label>
+            {/* Tips pr. platform */}
+            {platform === 'instagram' && (
+              <div style={{ fontSize:12, color:'#666' }}>
+                💡 Tip: Brug 5-10 hashtags, emojis og et spørgsmål for at øge engagement.
+              </div>
+            )}
+            {platform === 'facebook' && (
+              <div style={{ fontSize:12, color:'#666' }}>
+                💡 Tip: Opslag med spørgsmål får ofte flere kommentarer. Del gerne en personlig vinkel.
+              </div>
+            )}
           </div>
-        </div>
 
-        {/* Kontroller */}
-        <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom: 10 }}>
-          <button type="button" onClick={analyzePhoto} disabled={!imageUrl || analyzing} style={btn}>
-            {analyzing ? 'Analyserer…' : 'Analyser billede'}
-          </button>
-          {imageUrl && (
-            <button type="button" onClick={useInQuickPost} style={btn}>
-              Brug i opslag
-            </button>
-          )}
-          {quickImageUrl && <span style={{ fontSize:12, color:'#666' }}>Billedet er tilknyttet “Hurtigt opslag”.</span>}
-        </div>
+          {statusMsg && <p style={{ marginTop: 8, color: statusMsg.startsWith('Fejl') ? '#b00' : '#222' }}>{statusMsg}</p>}
+        </Card>
 
-        {/* Preview */}
-        {imageUrl && (
-          <div style={{ marginTop: 6 }}>
-            <img src={imageUrl} alt="Upload" style={{ maxWidth: '100%', borderRadius: 8, border:'1px solid #eee' }} />
+        {/* Foto & video (fase 1 – simpel upload/preview lokalt) */}
+        <Card title="Foto & video">
+          <div style={{ display:'grid', gap:10 }}>
+            {!photoPreview ? (
+              <div
+                style={{
+                  border:'2px dashed #ddd', borderRadius:12, padding:20,
+                  minHeight:140, display:'grid', placeItems:'center'
+                }}
+              >
+                <div style={{ textAlign:'center' }}>
+                  <div style={{ fontSize:16, marginBottom:6 }}>Upload et billede</div>
+                  <div style={{ color:'#666', marginBottom: 10 }}>
+                    Få hurtigt preview nu. (Beskæring/AI-forbedring kommer i næste trin)
+                  </div>
+                  <label
+                    style={{
+                      display:'inline-block', padding:'10px 14px',
+                      border:'1px solid #111', borderRadius:8,
+                      cursor:'pointer', background:'#111', color:'#fff'
+                    }}
+                  >
+                    Vælg fil
+                    <input type="file" accept="image/*" onChange={onPickLocalPhoto} style={{ display:'none' }} />
+                  </label>
+                </div>
+              </div>
+            ) : (
+              <>
+                <img
+                  src={photoPreview}
+                  alt="Preview"
+                  style={{ width:'100%', maxHeight:260, objectFit:'cover', borderRadius:8, border:'1px solid #eee' }}
+                />
+                <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                  <button type="button" onClick={usePhotoInPost} style={btn}>Brug i opslag</button>
+                  <label
+                    style={{
+                      display:'inline-block', padding:'8px 10px',
+                      border:'1px solid #111', borderRadius:8,
+                      cursor:'pointer', background:'#fff', color:'#111'
+                    }}
+                  >
+                    Erstat billede
+                    <input type="file" accept="image/*" onChange={onPickLocalPhoto} style={{ display:'none' }} />
+                  </label>
+                  <button type="button" onClick={()=>setPhotoPreview('')} style={{ ...btn, background:'#fafafa', color:'#111', borderColor:'#ddd' }}>
+                    Fjern
+                  </button>
+                </div>
+
+                {/* Teasers for kommende funktioner */}
+                <div style={{ fontSize:12, color:'#666' }}>
+                  Kommer snart: hurtig crop (1:1, 4:5), auto-komposition, farver/lys, distraktions-fjernelse.
+                </div>
+              </>
+            )}
           </div>
-        )}
-
-        {/* Feedback */}
-        {analysis && (
-          <section style={{ marginTop: 12, padding: 10, border: '1px solid #eee', borderRadius: 8 }}>
-            <div style={{ fontWeight: 600, marginBottom: 6 }}>Foto-feedback</div>
-            <p><strong>Størrelse:</strong> {analysis.width}×{analysis.height} ({analysis.aspect_label})</p>
-            <p>
-              <strong>Lys (0-255):</strong> {analysis.brightness} — <strong>Kontrast:</strong> {analysis.contrast} — <strong>Skarphed:</strong> {analysis.sharpness}
-            </p>
-            <p><strong>Vurdering:</strong> {analysis.verdict}</p>
-            <ul>
-              {analysis.suggestions.map((s, i) => <li key={i}>{s}</li>)}
-            </ul>
-          </section>
-        )}
-      </Card>
+        </Card>
+      </div>
     </section>
   );
 }
