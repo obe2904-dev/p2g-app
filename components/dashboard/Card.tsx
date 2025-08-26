@@ -1,39 +1,29 @@
 // components/dashboard/Card.tsx
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode, CSSProperties, HTMLAttributes } from 'react';
 
-export type CardProps = {
-  children: ReactNode;
-  title?: ReactNode;   // valgfri overskrift øverst
-  footer?: ReactNode;  // valgfri footer nederst (fx knapper)
+type CardProps = HTMLAttributes<HTMLDivElement> & {
+  title?: ReactNode;
+  footer?: ReactNode;
   style?: CSSProperties;
+  children: ReactNode;
 };
 
-export default function Card({ children, title, footer, style }: CardProps) {
+export default function Card({ title, footer, children, style, ...rest }: CardProps) {
   return (
-    <section style={{ ...baseStyle, ...style }}>
-      {title ? <div style={titleStyle}>{title}</div> : null}
+    <div
+      {...rest}
+      style={{
+        border: '1px solid #eee',
+        borderRadius: 12,
+        padding: 16,
+        background: '#fff',
+        boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+        ...(style || {}),
+      }}
+    >
+      {title ? <div style={{ fontSize: 12, color: '#666', marginBottom: 6 }}>{title}</div> : null}
       <div>{children}</div>
-      {footer ? <div style={footerStyle}>{footer}</div> : null}
-    </section>
+      {footer ? <div style={{ marginTop: 10 }}>{footer}</div> : null}
+    </div>
   );
 }
-
-const baseStyle: CSSProperties = {
-  border: '1px solid #eee',
-  borderRadius: 12,
-  padding: 16,
-  background: '#fff',
-  boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-  display: 'grid',
-  gap: 8,
-};
-
-const titleStyle: CSSProperties = {
-  fontSize: 12,
-  color: '#666',
-  marginBottom: 4,
-};
-
-const footerStyle: CSSProperties = {
-  marginTop: 8,
-};
