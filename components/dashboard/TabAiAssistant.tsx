@@ -195,41 +195,79 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
         </div>
       </Card>
 
-      {/* AI-forslag */}
-      <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: 12, flex: '1 1 auto', minWidth: 260 }}>
-          {[0,1,2].map((i) => {
-            const meta = platform ? metas[platform as 'facebook'|'instagram'][i] : null;
-            return (
-              <Card
-                key={i}
-                title={platform ? `AI-forslag (${meta?.type || '—'})` : 'AI-forslag'}
-                style={{ flex:'1 1 0', minWidth: 260 }}
-                footer={
-                  <button
-                    disabled={!suggestions[i]}
-                    onClick={() => suggestions[i] && pickSuggestion(suggestions[i])}
-                    style={{ width:'100%', padding:'8px 10px', border:'1px solid #111', background:'#111', color:'#fff', borderRadius:8, cursor:'pointer' }}
-                  >
-                    Brug dette
-                  </button>
-                }
-              >
-                {/* Meta chips */}
-                <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom: 8 }}>
-                  {meta ? (
-                    <>
-                      {chip(meta.engagement === 'Høj' ? 'Engagement: Høj' : 'Engagement: Mellem')}
-                      {chip('Bedst: ' + meta.bestTime)}
-                    </>
-                  ) : (
-                    chip('Vælg platform for målrettede forslag')
-                  )}
-                </div>
-                <div style={{ whiteSpace:'pre-wrap', fontSize:14, minHeight: 90 }}>
-                  {loadingSug ? 'Henter…' : (suggestions[i] || '—')}
-                </div>
-              </Card>
+            {/* AI-forslag */}
+      <Card
+        title={platform ? `AI-forslag (${platform === 'facebook' ? 'Facebook' : 'Instagram'})` : 'AI-forslag'}
+        headerRight={
+          <button
+            onClick={refreshSuggestions}
+            disabled={loadingSug || !platform}
+            style={{
+              padding:'8px 10px',
+              border:'1px solid #111',
+              background: !platform ? '#f2f2f2' : '#111',
+              color: !platform ? '#999' : '#fff',
+              borderRadius:8,
+              cursor: !platform ? 'not-allowed' : 'pointer'
+            }}
+          >
+            {loadingSug ? 'Henter…' : 'Få 3 nye'}
+          </button>
+        }
+      >
+        <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 12, flex: '1 1 auto', minWidth: 260 }}>
+            {[0,1,2].map((i) => {
+              const meta = platform ? metas[platform as 'facebook'|'instagram'][i] : null;
+              return (
+                <Card
+                  key={i}
+                  title={platform ? `Forslag ${i+1}${meta ? ` • ${meta.type}` : ''}` : `Forslag ${i+1}`}
+                  style={{ flex:'1 1 0', minWidth: 260 }}
+                  footer={
+                    <button
+                      disabled={!suggestions[i]}
+                      onClick={() => suggestions[i] && pickSuggestion(suggestions[i])}
+                      style={{ width:'100%', padding:'8px 10px', border:'1px solid #111', background:'#111', color:'#fff', borderRadius:8, cursor:'pointer' }}
+                    >
+                      Brug dette
+                    </button>
+                  }
+                >
+                  {/* Meta chips */}
+                  <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom: 8 }}>
+                    {meta ? (
+                      <>
+                        <span style={{ fontSize: 11, padding: '2px 8px', border: '1px solid #eee', borderRadius: 999, background:'#fafafa' }}>
+                          {meta.engagement === 'Høj' ? 'Engagement: Høj' : 'Engagement: Mellem'}
+                        </span>
+                        <span style={{ fontSize: 11, padding: '2px 8px', border: '1px solid #eee', borderRadius: 999, background:'#fafafa' }}>
+                          Bedst: {meta.bestTime}
+                        </span>
+                      </>
+                    ) : (
+                      <span style={{ fontSize: 11, padding: '2px 8px', border: '1px solid #eee', borderRadius: 999, background:'#fafafa' }}>
+                        Vælg platform for målrettede forslag
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ whiteSpace:'pre-wrap', fontSize:14, minHeight: 90 }}>
+                    {loadingSug ? 'Henter…' : (suggestions[i] || '—')}
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+
+        {sugErr && <div style={{ color:'#b00', fontSize:13, marginTop: 8 }}>{sugErr}</div>}
+        {!platform && !sugErr && (
+          <div style={{ fontSize:12, color:'#666', marginTop: 6 }}>
+            Vælg først en platform for at få målrettede forslag.
+          </div>
+        )}
+      </Card>
             );
           })}
         </div>
