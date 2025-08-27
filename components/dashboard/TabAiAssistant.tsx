@@ -196,6 +196,8 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
       </Card>
 
             {/* AI-forslag */}
+    
+                   {/* AI-forslag */}
       <Card
         title={platform ? `AI-forslag (${platform === 'facebook' ? 'Facebook' : 'Instagram'})` : 'AI-forslag'}
         headerRight={
