@@ -1,14 +1,14 @@
 'use client';
-import * as React from 'react';
+
+import React, { type ReactNode, type HTMLAttributes } from 'react';
 
 export type CardProps = {
-  children: React.ReactNode;
+  children: ReactNode;
   title?: string;
-  footer?: React.ReactNode;
+  footer?: ReactNode;
   style?: React.CSSProperties;
-  /** Indhold i højre side af headeren (fx knapper) */
-  headerRight?: React.ReactNode;
-} & React.HTMLAttributes<HTMLDivElement>;
+  headerRight?: ReactNode; // knapper/controls i højre side af headeren
+} & HTMLAttributes<HTMLDivElement>;
 
 export default function Card({
   children,
@@ -16,36 +16,37 @@ export default function Card({
   footer,
   style,
   headerRight,
-  ...divProps
+  ...rest
 }: CardProps) {
   return (
-    <div
-      {...divProps}
+    <section
+      {...rest}
       style={{
         border: '1px solid #eee',
         borderRadius: 12,
         padding: 16,
         background: '#fff',
         boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-        ...style
+        ...style,
       }}
     >
       {(title || headerRight) && (
-        <div style={{ display:'flex', alignItems:'center', marginBottom: 8, gap: 8 }}>
-          {title && <div style={{ fontSize: 12, color: '#666', marginBottom: 0 }}>{title}</div>}
-          <div style={{ marginLeft: 'auto' }}>
-            {headerRight}
-          </div>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 8,
+          }}
+        >
+          {title && <div style={{ fontSize: 12, color: '#666' }}>{title}</div>}
+          {headerRight}
         </div>
       )}
 
       <div>{children}</div>
 
-      {footer && (
-        <div style={{ marginTop: 12 }}>
-          {footer}
-        </div>
-      )}
-    </div>
+      {footer && <div style={{ marginTop: 12 }}>{footer}</div>}
+    </section>
   );
 }
