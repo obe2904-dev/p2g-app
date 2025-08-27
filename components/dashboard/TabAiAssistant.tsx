@@ -7,6 +7,7 @@ import Card from './Card';
 
 type Tone = 'neutral' | 'tilbud' | 'informativ' | 'hyggelig';
 type Platform = '' | 'facebook' | 'instagram';
+type Plan = 'free' | 'basic' | 'pro' | 'premium';
 
 type SuggestionMeta = {
   type: string;
@@ -17,6 +18,74 @@ type SuggestionMeta = {
 export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => void }) {
   // -------- Platform-valg --------
   const [platform, setPlatform] = useState<Platform>('');
+
+  // -------- Plan / gating --------
+  const [plan, setPlan] = useState<Plan>('free');
+  const [freeBox, setFreeBox] = useState<{ count: number; start: number } | null>(null);
+  const SEVEN_D_MS = 7 * 24 * 60 * 60 * 1000;
+  const FREE_MAX_PER_WINDOW = 2;
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('plan')
+          .maybeSingle();
+        const p = (prof?.plan || 'free') as Plan;
+        setPlan(p);
+      } catch {
+        setPlan('free');
+      }
+    })();
+
+    // load throttling info (kun UI)
+    if (typeof window !== 'undefined') {
+      const raw = localStorage.getItem('ai_free_sug');
+      if (raw) {
+        try {
+          const obj = JSON.parse(raw);
+          if (obj && typeof obj.count === 'number' && typeof obj.start === 'number') {
+            setFreeBox(obj);
+          }
+        } catch {}
+      }
+    }
+  }, []);
+
+  function canGetNewSug() {
+    if (plan !== 'free') return { ok: true as const, left: Infinity, nextAt: undefined as Date | undefined };
+    const now = Date.now();
+    const start = freeBox?.start ?? 0;
+    const count = freeBox?.count ?? 0;
+
+    if (!start || now - start > SEVEN_D_MS) {
+      // ny 7-dages periode
+      return { ok: true as const, left: FREE_MAX_PER_WINDOW, nextAt: undefined };
+    }
+    const left = Math.max(0, FREE_MAX_PER_WINDOW - count);
+    if (left > 0) return { ok: true as const, left, nextAt: undefined };
+
+    const nextAt = new Date(start + SEVEN_D_MS);
+    return { ok: false as const, left: 0, nextAt };
+  }
+
+  function recordFreeUse() {
+    if (plan !== 'free') return;
+    const now = Date.now();
+    let start = freeBox?.start ?? 0;
+    let count = freeBox?.count ?? 0;
+
+    if (!start || now - start > SEVEN_D_MS) {
+      start = now;
+      count = 0;
+    }
+    const box = { start, count: count + 1 };
+    setFreeBox(box);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('ai_free_sug', JSON.stringify(box));
+    }
+  }
 
   // -------- AI-forslag --------
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -53,6 +122,14 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
 
   async function refreshSuggestions() {
     if (!platform) { setSugErr('Vælg først Facebook eller Instagram.'); return; }
+
+    // UI-gating (Free)
+    const gate = canGetNewSug();
+    if (!gate.ok) {
+      setSugErr(`Gratis: Næste fornyelse ${gate.nextAt?.toLocaleDateString('da-DK')}. Se planer på /pricing.`);
+      return;
+    }
+
     setSugErr(null);
     setLoadingSug(true);
     try {
@@ -78,6 +155,9 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
 
       // Lokal tæller-løft (HeroRow kan lytte via prop)
       onAiTextUse?.();
+
+      // Registrér “forbrug” i Free-gaten (kun UI/LocalStorage for nu)
+      if (plan === 'free') recordFreeUse();
     } catch (e: any) {
       setSugErr(e.message || 'Kunne ikke hente forslag');
       setSuggestions([]);
@@ -159,6 +239,9 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
     </span>
   );
 
+  const gate = canGetNewSug();
+  const disableGetNew = loadingSug || !platform || !gate.ok;
+
   return (
     <section style={{ display: 'grid', gap: 16 }}>
       {/* Platform-valg */}
@@ -195,64 +278,81 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
         </div>
       </Card>
 
-      {/* AI-forslag (i én Card-ramme med knap i headeren) */}
+      {/* AI-forslag (i én ramme med handling i headeren) */}
       <Card
         title={platform ? `AI-forslag til ${platform === 'facebook' ? 'Facebook' : 'Instagram'}` : 'AI-forslag'}
         headerRight={
-          <button
-            onClick={refreshSuggestions}
-            disabled={loadingSug || !platform}
-            style={{
-              padding:'8px 10px',
-              border:'1px solid #111',
-              background: !platform ? '#f2f2f2' : '#111',
-              color: !platform ? '#999' : '#fff',
-              borderRadius:8,
-              cursor: !platform ? 'not-allowed' : 'pointer'
-            }}
-          >
-            {loadingSug ? 'Henter…' : 'Få 3 nye'}
-          </button>
+          <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+            <button
+              onClick={refreshSuggestions}
+              disabled={disableGetNew}
+              style={{
+                padding:'8px 10px',
+                border:'1px solid #111',
+                background: disableGetNew ? '#f2f2f2' : '#111',
+                color: disableGetNew ? '#999' : '#fff',
+                borderRadius:8,
+                cursor: disableGetNew ? 'not-allowed' : 'pointer'
+              }}
+              title={!platform ? 'Vælg først platform' : (gate.ok ? '' : 'Ikke tilgængelig endnu')}
+            >
+              {loadingSug ? 'Henter…' : 'Få 3 nye'}
+            </button>
+
+            {plan === 'free' && (
+              <span style={{ fontSize:12, color:'#666' }}>
+                {gate.ok
+                  ? `Gratis: ${gate.left === Infinity ? '' : `${gate.left} tilbage / 7 dage`}`
+                  : `Gratis: næste ${gate.nextAt?.toLocaleDateString('da-DK')}`}
+              </span>
+            )}
+
+            <a href="/pricing" style={{ fontSize:12, textDecoration:'none', border:'1px solid #ddd', borderRadius:999, padding:'4px 8px', background:'#fafafa', color:'#111' }}>
+              Opgradér
+            </a>
+          </div>
         }
       >
-        <div style={{ display:'grid', gap:12, gridTemplateColumns:'repeat(auto-fit, minmax(260px, 1fr))' }}>
-          {[0,1,2].map((i) => {
-            const meta = platform ? metas[platform as 'facebook'|'instagram'][i] : null;
-            return (
-              <Card
-                key={i}
-                style={{ minWidth: 260, display:'grid', gridTemplateRows:'1fr auto', gap:8 }}
-                footer={
-                  <button
-                    disabled={!suggestions[i]}
-                    onClick={() => suggestions[i] && pickSuggestion(suggestions[i])}
-                    style={{ width:'100%', padding:'8px 10px', border:'1px solid #111', background:'#111', color:'#fff', borderRadius:8, cursor:'pointer' }}
-                  >
-                    Brug dette
-                  </button>
-                }
-              >
-                {/* Meta chips */}
-                <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom: 8 }}>
-                  {meta ? (
-                    <>
-                      {chip(meta.engagement === 'Høj' ? 'Engagement: Høj' : 'Engagement: Mellem')}
-                      {chip('Bedst: ' + meta.bestTime)}
-                    </>
-                  ) : (
-                    chip('Vælg platform for målrettede forslag')
-                  )}
-                </div>
-                <div style={{ whiteSpace:'pre-wrap', fontSize:14, minHeight: 90 }}>
-                  {loadingSug ? 'Henter…' : (suggestions[i] || '—')}
-                </div>
-              </Card>
-            );
-          })}
+        <div style={{ display:'flex', gap: 12, alignItems:'stretch', flexWrap:'wrap' }}>
+          <div style={{ display: 'flex', gap: 12, flex: '1 1 auto', minWidth: 260 }}>
+            {[0,1,2].map((i) => {
+              const meta = platform ? metas[platform as 'facebook'|'instagram'][i] : null;
+              return (
+                <Card
+                  key={i}
+                  title={platform ? `Forslag (${meta?.type || '—'})` : 'Forslag'}
+                  style={{ flex:'1 1 0', minWidth: 260 }}
+                  footer={
+                    <button
+                      disabled={!suggestions[i]}
+                      onClick={() => suggestions[i] && pickSuggestion(suggestions[i])}
+                      style={{ width:'100%', padding:'8px 10px', border:'1px solid #111', background:'#111', color:'#fff', borderRadius:8, cursor:'pointer' }}
+                    >
+                      Brug dette
+                    </button>
+                  }
+                >
+                  {/* Meta chips */}
+                  <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom: 8 }}>
+                    {meta ? (
+                      <>
+                        {chip(meta.engagement === 'Høj' ? 'Engagement: Høj' : 'Engagement: Mellem')}
+                        {chip('Bedst: ' + meta.bestTime)}
+                      </>
+                    ) : (
+                      chip('Vælg platform for målrettede forslag')
+                    )}
+                  </div>
+                  <div style={{ whiteSpace:'pre-wrap', fontSize:14, minHeight: 90 }}>
+                    {loadingSug ? 'Henter…' : (suggestions[i] || '—')}
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+          {sugErr && <div style={{ color:'#b00', fontSize:13 }}>{sugErr}</div>}
+          {!platform && <div style={{ fontSize:12, color:'#666' }}>Vælg først en platform.</div>}
         </div>
-
-        {sugErr && <div style={{ color:'#b00', marginTop: 8 }}>{sugErr}</div>}
-        {!platform && <div style={{ fontSize:12, color:'#666', marginTop: 4 }}>Vælg først en platform.</div>}
       </Card>
 
       {/* TO-KOLONNE LAYOUT: Hurtigt opslag (venstre) + Foto & video (højre) */}
