@@ -195,26 +195,24 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
         </div>
       </Card>
 
-      {/* AI-forslag – nu i én Card med actions i højre hjørne */}
+      {/* AI-forslag (i én Card-ramme med knap i headeren) */}
       <Card
         title={platform ? `AI-forslag til ${platform === 'facebook' ? 'Facebook' : 'Instagram'}` : 'AI-forslag'}
-        actions={
-          <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-            <button
-              onClick={refreshSuggestions}
-              disabled={loadingSug || !platform}
-              style={{
-                padding:'8px 10px',
-                border:'1px solid #111',
-                background: !platform ? '#f2f2f2' : '#111',
-                color: !platform ? '#999' : '#fff',
-                borderRadius:8,
-                cursor: !platform ? 'not-allowed' : 'pointer'
-              }}
-            >
-              {loadingSug ? 'Henter…' : 'Få 3 nye'}
-            </button>
-          </div>
+        headerRight={
+          <button
+            onClick={refreshSuggestions}
+            disabled={loadingSug || !platform}
+            style={{
+              padding:'8px 10px',
+              border:'1px solid #111',
+              background: !platform ? '#f2f2f2' : '#111',
+              color: !platform ? '#999' : '#fff',
+              borderRadius:8,
+              cursor: !platform ? 'not-allowed' : 'pointer'
+            }}
+          >
+            {loadingSug ? 'Henter…' : 'Få 3 nye'}
+          </button>
         }
       >
         <div style={{ display:'grid', gap:12, gridTemplateColumns:'repeat(auto-fit, minmax(260px, 1fr))' }}>
@@ -223,7 +221,7 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
             return (
               <Card
                 key={i}
-                title={platform ? `Forslag ${i+1}${meta?.type ? ` — ${meta.type}` : ''}` : `Forslag ${i+1}`}
+                style={{ minWidth: 260, display:'grid', gridTemplateRows:'1fr auto', gap:8 }}
                 footer={
                   <button
                     disabled={!suggestions[i]}
@@ -253,9 +251,8 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
           })}
         </div>
 
-        {/* Info/fejl under listen */}
-        {sugErr && <div style={{ color:'#b00', fontSize:13, marginTop: 8 }}>{sugErr}</div>}
-        {!platform && <div style={{ fontSize:12, color:'#666', marginTop:6 }}>Vælg først en platform.</div>}
+        {sugErr && <div style={{ color:'#b00', marginTop: 8 }}>{sugErr}</div>}
+        {!platform && <div style={{ fontSize:12, color:'#666', marginTop: 4 }}>Vælg først en platform.</div>}
       </Card>
 
       {/* TO-KOLONNE LAYOUT: Hurtigt opslag (venstre) + Foto & video (højre) */}
@@ -389,7 +386,7 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
                   Kommer snart: hurtig crop (1:1, 4:5), auto-komposition, farver/lys, distraktions-fjernelse.
                 </div>
               </>
-            ) }
+            )}
           </div>
         </Card>
       </div>
