@@ -1,12 +1,16 @@
-import * as React from 'react';
+'use client';
+
+import React from 'react';
 
 export type Suggestion = {
   id: string;
   title: string;
-  subtitle: string;
-  category: 'cropping' | 'cleaning' | 'color';
-  tag?: string;            // lille badge-tekst (fx "cropping", "cleaning", "color")
-  excludes?: string[];     // gensidigt udelukkende valg
+  subtitle?: string;
+  /** 'cropping' | 'cleaning' | 'color' (andre værdier tolereres, men tæller ikke med i max) */
+  category: string;
+  tag?: string;
+  /** Id’er som er gensidigt udelukkede med dette forslag */
+  excludes?: string[];
 };
 
 type Props = {
@@ -16,92 +20,129 @@ type Props = {
 };
 
 export default function PhotoSuggestions({ items, selected, onToggle }: Props) {
-  const total = items.length;
-  const applied = selected.size;
+  // --- grupper & max-logik ---
+  const hasCropping = items.some(i => i.category === 'cropping');
+  const hasColor   = items.some(i => i.category === 'color');
+  const cleaning   = items.filter(i => i.category === 'cleaning');
 
-  const badgeColor: Record<Suggestion['category'], string> = {
-    cropping: '#cfe3ff',
-    cleaning: '#d9f7df',
-    color:    '#f0e2ff',
-  };
+  const maxSelectable =
+    (hasCropping ? 1 : 0) +
+    (hasColor ? 1 : 0) +
+    cleaning.length; // i dit datasæt = 3
+
+  const selectedCount = selected.size;
+
+  const selectedInCat = (cat: string) =>
+    items.filter(i => i.category === cat && selected.has(i.id));
+
+  // Hvis vi er ved kapacitetsgrænsen, må man kun klikke ting, der "erstatter" noget
+  const atCap = selectedCount >= maxSelectable;
+
+  function isDisabled(item: Suggestion) {
+    if (selected.has(item.id)) return false; // altid lov at slå fra
+    if (!atCap) return false;
+
+    // Erstatning inden for eksklusiv kategori (cropping/color) er OK, selv ved cap
+    if (item.category === 'cropping' && selectedInCat('cropping').length >= 1) return false;
+    if (item.category === 'color'    && selectedInCat('color').length    >= 1) return false;
+
+    // Cleaning har ikke “erstatning” (alle kan vælges op til max), så når cap er nået -> disable
+    return true;
+  }
+
+  // — visning: grupperet i de tre sektioner (samme rækkefølge som din Figma)
+  const groups: Array<{ key: string; title: string; items: Suggestion[] }> = [
+    { key: 'cropping', title: 'Beskæring & komposition', items: items.filter(i => i.category === 'cropping') },
+    { key: 'cleaning', title: 'Rengøring',               items: items.filter(i => i.category === 'cleaning') },
+    { key: 'color',    title: 'Farver & lys',            items: items.filter(i => i.category === 'color') },
+  ].filter(g => g.items.length > 0);
 
   return (
-    <div style={{ display:'grid', gap:12 }}>
-      <div>
-        <div style={{ fontSize:16, fontWeight:600, marginBottom:6 }}>AI Analysis & Suggestions</div>
-        <div style={{ fontSize:14, color:'#555' }}>
-          General Feedback
+    <div style={{ display: 'grid', gap: 12 }}>
+      {/* Header m. tæller */}
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+        <div style={{ fontWeight: 600 }}>AI-forslag (foto)</div>
+        <div style={{ fontSize: 12, color: '#666' }}>
+          Valgt <strong>{selectedCount}</strong> / {maxSelectable}{' '}
+          <span style={{ marginLeft: 6, color: '#999' }}>
+            (1 crop + {cleaning.length} rengøringer + 1 farvelook)
+          </span>
         </div>
-        <p style={{ fontSize:14, marginTop:6 }}>
-          This is a great food photo! The dessert looks delicious, but there are a few distracting
-          elements. Apply one-click fixes below to make it more social-media ready.
-        </p>
       </div>
 
-      {/* Liste med forslag */}
-      <div style={{ display:'grid', gap:10 }}>
-        {items.map((s) => {
-          const isActive = selected.has(s.id);
-          return (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => onToggle(s.id)}
-              style={{
-                textAlign:'left',
-                border: isActive ? '2px solid #111' : '1px solid #e6e6e6',
-                background:'#fff',
-                borderRadius:12,
-                padding:14,
-                display:'grid',
-                gap:4,
-                cursor:'pointer'
-              }}
-            >
-              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                <div
-          aria-hidden
-          style={{
-            width:28, height:28, borderRadius:999,
-            border:'1px solid #ddd', display:'grid', placeItems:'center',
-            fontSize:14, background: isActive ? '#111' : '#fafafa', color:isActive ? '#fff' : '#111'
-          }}
-                >
-                  {isActive ? '✓' : '◦'}
-                </div>
-                <div style={{ fontWeight:600, fontSize:14 }}>{s.title}</div>
-                <span
+      {groups.map(group => (
+        <section key={group.key} style={{ display: 'grid', gap: 8 }}>
+          <div style={{ fontSize: 12, color: '#666' }}>{group.title}</div>
+          <div
+            style={{
+              display: 'grid',
+              gap: 8,
+              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              alignItems: 'stretch',
+            }}
+          >
+            {group.items.map(item => {
+              const active = selected.has(item.id);
+              const disabled = isDisabled(item);
+
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => !disabled && onToggle(item.id)}
+                  disabled={disabled}
+                  aria-pressed={active}
                   style={{
-                    marginLeft:'auto',
-                    fontSize:11,
-                    padding:'2px 8px',
-                    borderRadius:999,
-                    background: badgeColor[s.category],
+                    textAlign: 'left',
+                    border: '1px solid ' + (active ? '#111' : '#eee'),
+                    borderRadius: 12,
+                    background: active ? '#f7f7f7' : '#fff',
+                    padding: 12,
+                    cursor: disabled ? 'not-allowed' : 'pointer',
+                    opacity: disabled ? 0.55 : 1,
+                    position: 'relative',
+                    transition: 'border-color 120ms, background 120ms, opacity 120ms',
+                    minHeight: 86,
                   }}
                 >
-                  {s.tag || s.category}
-                </span>
-              </div>
-              <div style={{ marginLeft:38, fontSize:13, color:'#666' }}>{s.subtitle}</div>
-            </button>
-          );
-        })}
-      </div>
+                  {/* Checkmark når valgt */}
+                  {active && (
+                    <span
+                      aria-hidden
+                      style={{
+                        position: 'absolute',
+                        top: 8,
+                        right: 8,
+                        width: 22,
+                        height: 22,
+                        borderRadius: 999,
+                        border: '1px solid #111',
+                        display: 'grid',
+                        placeItems: 'center',
+                        fontSize: 14,
+                        background: '#111',
+                        color: '#fff',
+                      }}
+                    >
+                      ✓
+                    </span>
+                  )}
 
-      {/* Tæller */}
-      <div
-        style={{
-          display:'flex', justifyContent:'space-between', alignItems:'center',
-          borderTop:'1px solid #eee', paddingTop:8, fontSize:13, color:'#555'
-        }}
-      >
-        <div style={{ flex:1, height:6, background:'#f3f3f3', borderRadius:999, marginRight:10 }}>
-          <div style={{
-            height:'100%', width: `${Math.min(100, (applied/Math.max(1,total))*100)}%`,
-            background:'#111', borderRadius:999
-          }} />
-        </div>
-        <span>Applied Suggestions {applied} / {total}</span>
+                  <div style={{ fontWeight: 600, marginBottom: 4 }}>{item.title}</div>
+                  {item.subtitle && (
+                    <div style={{ fontSize: 12, color: '#666' }}>{item.subtitle}</div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+
+      {/* Lille help-tekst */}
+      <div style={{ fontSize: 12, color: '#666' }}>
+        Tip: Formater er gensidigt udelukkende (vælg ét). Farvelooks er også enten/eller.
+        Rengøringsforslag kan kombineres.
       </div>
     </div>
   );
