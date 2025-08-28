@@ -31,9 +31,14 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
   const [saving, setSaving] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
-  // -------- Foto & video (fase 1 – upload/preview) --------
+  // -------- Foto & video (upload/preview) --------
   const [photoPreview, setPhotoPreview] = useState<string>(''); // lokal dataURL/ObjectURL
   const [quickImageUrl, setQuickImageUrl] = useState<string>(''); // bruges i "Hurtigt opslag"
+
+  // -------- AI "forbedret" billede (lokal canvas) --------
+  const [enhancedUrl, setEnhancedUrl] = useState<string>('');
+  const [enhancing, setEnhancing] = useState(false);
+  const [enhanceMsg, setEnhanceMsg] = useState<string | null>(null);
 
   // -------- Foto-forslag (valgbar liste) --------
   const photoItems: Suggestion[] = useMemo(() => {
@@ -75,7 +80,7 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
       },
     ];
 
-    // Rengøring (samme for begge – kan udvides med AI senere)
+    // Rengøring (placeholder – udføres server-side senere)
     const cleaning: Suggestion[] = [
       {
         id: 'clean:remove-phone',
@@ -126,22 +131,25 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
 
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(new Set());
   useEffect(() => {
-    // ryd valg når platform skifter
+    // ryd valg og forbedret billede når platform skifter
     setSelectedPhotoIds(new Set());
+    setEnhancedUrl('');
+    setEnhanceMsg(null);
   }, [platform]);
 
   function togglePhotoSuggestion(id: string) {
+    setEnhancedUrl(''); // hvis man ændrer valg, nulstil AI-resultat
     setSelectedPhotoIds(prev => {
       const next = new Set(prev);
       const clicked = photoItems.find(i => i.id === id);
       if (!clicked) return next;
 
       if (next.has(id)) {
-        next.delete(id); // slå fra
+        next.delete(id);
       } else {
         // Fjern gensidigt udelukkede valg
         (clicked.excludes || []).forEach(ex => next.delete(ex));
-        // Hvis andre elementer ekskluderer dette id (fx du vælger 4:5, så fjern 1:1)
+        // Hvis andre elementer ekskluderer dette id
         photoItems.forEach(it => {
           if (it.excludes?.includes(id)) next.delete(it.id);
         });
@@ -165,7 +173,7 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
     ],
   }), []);
 
-  // Reset forslag ved platformskift
+  // Reset tekstforslag ved platformskift
   useEffect(() => { setSuggestions([]); setSugErr(null); }, [platform]);
 
   async function refreshSuggestions() {
@@ -254,12 +262,138 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
     if (!f) return;
     const url = URL.createObjectURL(f);
     setPhotoPreview(url);
+    setEnhancedUrl('');
+    setEnhanceMsg(null);
   }
-  function usePhotoInPost() {
-    if (!photoPreview) return;
-    setQuickImageUrl(photoPreview);
+  function usePhotoInPost(url?: string) {
+    const src = url || photoPreview;
+    if (!src) return;
+    setQuickImageUrl(src);
     const el = document.getElementById('quick-post');
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // -------- Prosa (analyse-tekst) baseret på valg --------
+  const analysisProse = useMemo(() => {
+    if (!photoPreview) return '';
+    const parts: string[] = [];
+    const chan = platform ? (platform === 'facebook' ? 'Facebook' : 'Instagram') : 'sociale medier';
+
+    parts.push(`Billedet har godt potentiale til ${chan}.`);
+
+    // Crop
+    const has11 = hasId('crop:ig:1-1') || hasId('crop:fb:1-1'); // (fb:1-1 findes ikke, men safe check)
+    const has45 = hasId('crop:ig:4-5') || hasId('crop:fb:4-5');
+    const has191 = hasId('crop:fb:1.91-1');
+    if (has11) parts.push('Et kvadratisk 1:1-crop fokuserer motivet og står stærkt i feedet.');
+    if (has45) parts.push('Et 4:5-portræt giver mere skærmplads på mobilen og kan øge stop-effekten.');
+    if (has191) parts.push('Et bredt 1.91:1-crop passer godt til link-agtige opslag i feedet.');
+
+    // Cleaning
+    const cleanPicked = ['clean:remove-phone','clean:remove-spoon','clean:reduce-carafe'].filter(id => selectedPhotoIds.has(id)).length;
+    if (cleanPicked > 0) parts.push('Let rengøring af distraktioner kan gøre motivet mere roligt og professionelt.');
+
+    // Color
+    if (hasId('color:warm')) parts.push('En varm café-tone giver en indbydende stemning.');
+    if (hasId('color:cool')) parts.push('En kølig nordisk tone giver et rent og moderne udtryk.');
+
+    return parts.join(' ');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photoPreview, platform, Array.from(selectedPhotoIds).join('|')]);
+
+  function hasId(id: string) { return selectedPhotoIds.has(id); }
+
+  // -------- Lokal "AI" forbedring (canvas) --------
+  async function generateEnhanced() {
+    if (!photoPreview) { setEnhanceMsg('Upload et billede først.'); return; }
+    setEnhanceMsg(null);
+    setEnhancing(true);
+    try {
+      const img = await loadImage(photoPreview);
+
+      // Aspect ratio ud fra valg
+      const aspect = getTargetAspect();
+      const { sx, sy, sw, sh } = centerCropToAspect(img.width, img.height, aspect);
+
+      // Platform-specifik outputstørrelse
+      const { outW, outH } = getTargetOutputSize(aspect);
+
+      // Tegn på canvas med simple “AI”-filters
+      const canvas = document.createElement('canvas');
+      canvas.width = outW;
+      canvas.height = outH;
+      const ctx = canvas.getContext('2d')!;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.filter = buildFilter(); // farve/lys
+
+      // drawImage: source crop → destination
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, outW, outH);
+
+      // (Cleaning forslag gemmes til senere – server-side)
+      const url = canvas.toDataURL('image/jpeg', 0.92);
+      setEnhancedUrl(url);
+    } catch (e:any) {
+      setEnhanceMsg('Kunne ikke generere forbedret billede: ' + e.message);
+    } finally {
+      setEnhancing(false);
+    }
+  }
+
+  function buildFilter() {
+    // Basis “mobilvenlig” lille løft
+    const base = 'brightness(1.03) contrast(1.05)';
+    if (hasId('color:warm')) return base + ' saturate(1.1) sepia(0.12)';
+    if (hasId('color:cool')) return base + ' saturate(0.96) hue-rotate(180deg)';
+    return base + ' saturate(1.02)';
+  }
+
+  function getTargetAspect() {
+    if (hasId('crop:ig:1-1')) return 1;               // 1:1
+    if (hasId('crop:ig:4-5') || hasId('crop:fb:4-5')) return 4 / 5; // 0.8 (portræt)
+    if (hasId('crop:fb:1.91-1')) return 1.91;
+    return NaN; // behold original
+  }
+
+  function getTargetOutputSize(aspect: number) {
+    // Skaler til anbefalede dimensioner hvis valgt crop + platform
+    if (platform === 'instagram') {
+      if (Math.abs(aspect - 1) < 0.01) return { outW: 1080, outH: 1080 };
+      if (Math.abs(aspect - 0.8) < 0.01) return { outW: 1080, outH: 1350 };
+    }
+    if (platform === 'facebook') {
+      if (Math.abs(aspect - 1.91) < 0.02) return { outW: 1200, outH: 630 };
+      if (Math.abs(aspect - 0.8) < 0.01) return { outW: 1080, outH: 1350 };
+    }
+    // fallback: brug original crop-størrelse
+    return { outW: 1024, outH: isNaN(aspect) ? 768 : Math.round(1024 / aspect) };
+  }
+
+  function centerCropToAspect(w: number, h: number, aspect: number) {
+    if (isNaN(aspect) || aspect <= 0) {
+      return { sx: 0, sy: 0, sw: w, sh: h }; // ingen crop
+    }
+    const current = w / h;
+    if (current > aspect) {
+      // for bred → beskær i bredden
+      const sw = Math.round(h * aspect);
+      const sx = Math.round((w - sw) / 2);
+      return { sx, sy: 0, sw, sh: h };
+    } else {
+      // for høj → beskær i højden
+      const sh = Math.round(w / aspect);
+      const sy = Math.round((h - sh) / 2);
+      return { sx: 0, sy, sw: w, sh };
+    }
+  }
+
+  function loadImage(src: string) {
+    return new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      // For dataURL/objectURL er CORS ikke et issue. (Hvis ekstern URL, kan man sætte crossOrigin = 'anonymous')
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Billedet kunne ikke læses'));
+      img.src = src;
+    });
   }
 
   // UI helpers
@@ -441,35 +575,75 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
               </div>
             ) : (
               <>
+                {/* Preview */}
                 <img
                   src={photoPreview}
                   alt="Preview"
                   style={{ width:'100%', maxHeight:260, objectFit:'cover', borderRadius:8, border:'1px solid #eee' }}
                 />
-                <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                  <button type="button" onClick={usePhotoInPost} style={btn}>Brug i opslag</button>
-                  <label
-                    style={{
-                      display:'inline-block', padding:'8px 10px',
-                      border:'1px solid #111', borderRadius:8,
-                      cursor:'pointer', background:'#fff', color:'#111'
-                    }}
-                  >
-                    Erstat billede
-                    <input type="file" accept="image/*" onChange={onPickLocalPhoto} style={{ display:'none' }} />
-                  </label>
-                  <button type="button" onClick={()=>setPhotoPreview('')} style={{ ...btn, background:'#fafafa', color:'#111', borderColor:'#ddd' }}>
-                    Fjern
-                  </button>
-                </div>
 
-                {/* AI Analysis & Suggestions (fra Figma) */}
+                {/* Prosa-analyse */}
+                {analysisProse && (
+                  <div style={{ fontSize:13, color:'#333', background:'#fafafa', border:'1px solid #eee', borderRadius:8, padding:10 }}>
+                    {analysisProse}
+                  </div>
+                )}
+
+                {/* Valg-panel (med counter i bunden via PhotoSuggestions) */}
                 <div style={{ marginTop: 10 }}>
                   <PhotoSuggestions
                     items={photoItems}
                     selected={selectedPhotoIds}
                     onToggle={togglePhotoSuggestion}
                   />
+                </div>
+
+                {/* Knap: Generér forbedret billede */}
+                <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+                  <button type="button" onClick={generateEnhanced} disabled={enhancing} style={btn}>
+                    {enhancing ? 'Genererer…' : 'Generér forbedret billede'}
+                  </button>
+                  {enhanceMsg && <span style={{ fontSize:12, color:'#b00' }}>{enhanceMsg}</span>}
+                </div>
+
+                {/* Sammenligning: Original vs. AI-forbedret */}
+                {enhancedUrl && (
+                  <div style={{ display:'grid', gap:10, gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))' }}>
+                    <div>
+                      <div style={{ fontSize:12, marginBottom:6, color:'#666' }}>Original</div>
+                      <img
+                        src={photoPreview}
+                        alt="Original"
+                        style={{ width:'100%', objectFit:'cover', borderRadius:8, border:'1px solid #eee', maxHeight:220 }}
+                      />
+                    </div>
+                    <div>
+                      <div style={{ fontSize:12, marginBottom:6, color:'#666' }}>AI-forbedret (lokal preview)</div>
+                      <img
+                        src={enhancedUrl}
+                        alt="AI forbedret"
+                        style={{ width:'100%', objectFit:'cover', borderRadius:8, border:'1px solid #cde', maxHeight:220 }}
+                      />
+                    </div>
+                    <div style={{ gridColumn:'1 / -1', display:'flex', gap:8, flexWrap:'wrap' }}>
+                      <button type="button" onClick={()=>usePhotoInPost(enhancedUrl)} style={btn}>Brug forbedret i opslag</button>
+                      <a
+                        href={enhancedUrl}
+                        download="post2grow-enhanced.jpg"
+                        style={{ ...btn, background:'#fff', color:'#111' }}
+                      >
+                        Download
+                      </a>
+                      <button type="button" onClick={()=>setEnhancedUrl('')} style={{ ...btn, background:'#fafafa', color:'#111', borderColor:'#ddd' }}>
+                        Nulstil sammenligning
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Små noter */}
+                <div style={{ fontSize:12, color:'#666' }}>
+                  Kommer snart: præcis “rengøring” (fjern distraktioner) med AI på serveren.
                 </div>
               </>
             )}
