@@ -26,7 +26,7 @@ type SuggestionMeta = {
 };
 
 const CLEANING_LIMIT = 4;          // maks 4 rengøringsforslag
-const PANEL_HEIGHT = 860;          // lidt højere, så bundlinjer er inde i kortet
+const PANEL_HEIGHT = 920;          // lidt højere, så bundlinjer er inde i kortet
 const FREE_WEEKLY_EDIT_LIMIT = 1;  // gratis-kvote pr. uge (stub)
 const USED_EDITS_THIS_WEEK = 0;    // TODO: sæt via backend, her er det en placeholder
 
