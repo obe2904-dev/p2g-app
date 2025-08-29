@@ -448,8 +448,19 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
           </div>
         </Card>
 
-        {/* B) Foto & video – fast højde; bundlinje inde i kortet */}
-        <Card title="Foto & video" style={{ height: PANEL_HEIGHT, display:'flex', flexDirection:'column' }}>
+        {/* B) Foto & video – fast højde; kvote i header; bundlinje inde i kortet */}
+        <Card
+          title="Foto & video"
+          headerRight={
+            <div style={{ fontSize:12, display:'flex', gap:8, alignItems:'center' }}>
+              <span>Gratis: {USED_EDITS_THIS_WEEK}/{FREE_WEEKLY_EDIT_LIMIT} pr. uge</span>
+              <a href="/pricing" style={{ textDecoration:'none', border:'1px solid #ddd', borderRadius:999, padding:'4px 8px', background:'#fafafa' }}>
+                Opgrader
+              </a>
+            </div>
+          }
+          style={{ height: PANEL_HEIGHT, display:'flex', flexDirection:'column', overflow:'hidden' }}
+        >
           {!photoPreview ? (
             <div
               style={{
@@ -528,7 +539,7 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
                 />
               </div>
 
-              {/* Bundlinje: Valgte + Gratis-kvote (ALTID inde i kortet) */}
+              {/* Bundlinje: Valgte (ALTID inde i kortet) */}
               <div style={{
                 marginTop:4, paddingTop:8, borderTop:'1px solid #eee',
                 display:'flex', gap:8, alignItems:'center', justifyContent:'space-between', flexWrap:'wrap'
@@ -536,12 +547,7 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
                 <div style={{ fontSize:13 }}>
                   Valgte ændringer: <strong>{selectedPhotoIds.size} / {maxSelectable}</strong>
                 </div>
-                <div style={{ fontSize:12, opacity:0.9, display:'flex', gap:8, alignItems:'center' }}>
-                  <span>Gratis: {USED_EDITS_THIS_WEEK}/{FREE_WEEKLY_EDIT_LIMIT} pr. uge</span>
-                  <a href="/pricing" style={{ textDecoration:'none', border:'1px solid #ddd', borderRadius:999, padding:'4px 8px', background:'#fafafa' }}>
-                    Opgrader
-                  </a>
-                </div>
+                {/* Hvis du også vil vise kvoten her, kan du tilføje den igen — men nu ligger den i headeren */}
               </div>
             </div>
           )}
