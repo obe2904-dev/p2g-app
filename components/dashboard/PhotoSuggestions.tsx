@@ -23,14 +23,6 @@ const tagLabel: Record<Suggestion['tag'], string> = {
 };
 
 export default function PhotoSuggestions({ items, selected, onToggle }: Props) {
-  // fast “maks” til tælleren (matcher vores faste liste)
-  const maxSelectable =
-    (items.some(i => i.tag === 'cropping') ? 1 : 0) +
-    (items.some(i => i.tag === 'color') ? 1 : 0) +
-    items.filter(i => i.tag === 'cleaning').length;
-
-  const applied = selected.size;
-
   return (
     <div style={wrap}>
       <ul style={list}>
@@ -41,9 +33,10 @@ export default function PhotoSuggestions({ items, selected, onToggle }: Props) {
               <button
                 type="button"
                 onClick={() => onToggle(it.id)}
+                aria-pressed={isOn}
                 style={{ ...rowBtn, ...(isOn ? rowActive : null) }}
               >
-                {/* venstre: check + lille kategori-mærkat */}
+                {/* venstre: check + kategori */}
                 <div style={left}>
                   <span
                     aria-hidden
@@ -67,21 +60,6 @@ export default function PhotoSuggestions({ items, selected, onToggle }: Props) {
           );
         })}
       </ul>
-
-      {/* bundlinje med tæller/progress (ikke sticky – vi har fast højde uden scroll) */}
-      <div style={footer}>
-        <span style={footerText}>
-          Valgt <strong>{applied}</strong> / {maxSelectable}
-        </span>
-        <div style={track}>
-          <div
-            style={{
-              ...fill,
-              width: `${Math.min(100, (applied / Math.max(1, maxSelectable)) * 100)}%`,
-            }}
-          />
-        </div>
-      </div>
     </div>
   );
 }
@@ -166,27 +144,4 @@ const sub: React.CSSProperties = {
   color: '#666',
   fontSize: 12,
   marginTop: 2,
-};
-
-const footer: React.CSSProperties = {
-  display: 'grid',
-  gap: 6,
-};
-
-const footerText: React.CSSProperties = {
-  fontSize: 13,
-  color: '#444',
-};
-
-const track: React.CSSProperties = {
-  height: 8,
-  background: '#f1f1f5',
-  borderRadius: 999,
-  overflow: 'hidden',
-};
-
-const fill: React.CSSProperties = {
-  height: '100%',
-  background: '#111',
-  borderRadius: 999,
 };
