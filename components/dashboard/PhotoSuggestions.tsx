@@ -97,6 +97,7 @@ const wrap: React.CSSProperties = {
   gridTemplateRows: '1fr auto',
   gap: 8,
   minHeight: 0, // vigtige for at sticky kan virke i scroll-containeren
+  height: '100%', 
 };
 
 const list: React.CSSProperties = {
