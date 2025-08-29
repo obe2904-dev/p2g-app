@@ -25,8 +25,10 @@ type SuggestionMeta = {
   bestTime: string;
 };
 
-const CLEANING_LIMIT = 4;     // maks 4 rengøringsforslag
-const PANEL_HEIGHT = 820;     // gjort højere, så der er plads til vurderingsboks under foto
+const CLEANING_LIMIT = 4;          // maks 4 rengøringsforslag
+const PANEL_HEIGHT = 860;          // lidt højere, så bundlinjer er inde i kortet
+const FREE_WEEKLY_EDIT_LIMIT = 1;  // gratis-kvote pr. uge (stub)
+const USED_EDITS_THIS_WEEK = 0;    // TODO: sæt via backend, her er det en placeholder
 
 export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => void }) {
   // -------- Platform-valg --------
@@ -74,6 +76,14 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
     const crops = platform === 'instagram' ? cropIG : platform === 'facebook' ? cropFB : [];
     return [...crops.slice(0, 2), ...cleaning.slice(0, CLEANING_LIMIT), ...color.slice(0, 2)];
   }, [platform]);
+
+  // Maks mulige valg (1 crop + 1 color + op til 4 cleaning)
+  const maxSelectable = useMemo(() => {
+    const hasCrop = photoItemsAll.some(i => i.tag === 'cropping');
+    const hasColor = photoItemsAll.some(i => i.tag === 'color');
+    const cleanCount = photoItemsAll.filter(i => i.tag === 'cleaning').length;
+    return (hasCrop ? 1 : 0) + (hasColor ? 1 : 0) + cleanCount;
+  }, [photoItemsAll]);
 
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(new Set());
   useEffect(() => { setSelectedPhotoIds(new Set()); setEditedPreview(''); setShowVariant('original'); }, [platform]);
@@ -235,10 +245,10 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
 
     let score = 0;
     if (hasImg) score += 35;
-    if (len >= 40 && len <= 220) score += 25;       // “instagram-lignende” caption-længde
+    if (len >= 40 && len <= 220) score += 25;
     if (hashtags >= 2 && hashtags <= 10) score += 20;
     if (hasQuestion) score += 10;
-    if (tone !== 'tilbud') score += 5;               // neutral/hyggelig/informativ opleves mere “organisk”
+    if (tone !== 'tilbud') score += 5;
     score = Math.max(0, Math.min(100, score));
 
     const label = score >= 75 ? 'Stærkt match'
@@ -438,7 +448,7 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
           </div>
         </Card>
 
-        {/* B) Foto & video – fast højde; ingen indre scroll; fast antal forslag */}
+        {/* B) Foto & video – fast højde; bundlinje inde i kortet */}
         <Card title="Foto & video" style={{ height: PANEL_HEIGHT, display:'flex', flexDirection:'column' }}>
           {!photoPreview ? (
             <div
@@ -465,7 +475,7 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
               </div>
             </div>
           ) : (
-            <div style={{ display:'grid', gridTemplateRows:'auto auto auto', gap:8, flex:1 }}>
+            <div style={{ display:'grid', gridTemplateRows:'auto auto 1fr auto', gap:8, flex:1, minHeight:0 }}>
               {/* Billed-preview */}
               <img
                 src={displayUrl}
@@ -510,12 +520,28 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
               </div>
 
               {/* Forslag – fast længde (ingen overflow/scroll) */}
-              <div>
+              <div style={{ minHeight:0 }}>
                 <PhotoSuggestions
                   items={photoItemsAll}
                   selected={selectedPhotoIds}
                   onToggle={togglePhotoSuggestion}
                 />
+              </div>
+
+              {/* Bundlinje: Valgte + Gratis-kvote (ALTID inde i kortet) */}
+              <div style={{
+                marginTop:4, paddingTop:8, borderTop:'1px solid #eee',
+                display:'flex', gap:8, alignItems:'center', justifyContent:'space-between', flexWrap:'wrap'
+              }}>
+                <div style={{ fontSize:13 }}>
+                  Valgte ændringer: <strong>{selectedPhotoIds.size} / {maxSelectable}</strong>
+                </div>
+                <div style={{ fontSize:12, opacity:0.9, display:'flex', gap:8, alignItems:'center' }}>
+                  <span>Gratis: {USED_EDITS_THIS_WEEK}/{FREE_WEEKLY_EDIT_LIMIT} pr. uge</span>
+                  <a href="/pricing" style={{ textDecoration:'none', border:'1px solid #ddd', borderRadius:999, padding:'4px 8px', background:'#fafafa' }}>
+                    Opgrader
+                  </a>
+                </div>
               </div>
             </div>
           )}
