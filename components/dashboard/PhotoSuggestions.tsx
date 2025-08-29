@@ -4,7 +4,17 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import Card from './Card';
-import PhotoSuggestions, { Suggestion } from './PhotoSuggestions';
+import PhotoSuggestions from './PhotoSuggestions'; // ✅ default import (no named Suggestion)
+
+// ✅ Local copy of the Suggestion type (PhotoSuggestions doesn't export it)
+type Suggestion = {
+  id: string;
+  title: string;
+  subtitle?: string;
+  category: 'cropping' | 'cleaning' | 'color';
+  tag: 'cropping' | 'cleaning' | 'color';
+  excludes?: string[];
+};
 
 type Tone = 'neutral' | 'tilbud' | 'informativ' | 'hyggelig';
 type Platform = '' | 'facebook' | 'instagram';
