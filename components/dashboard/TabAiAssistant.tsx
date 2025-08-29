@@ -15,9 +15,6 @@ type SuggestionMeta = {
   bestTime: string;
 };
 
-const CLEANING_LIMIT = 4;          // maks 4 rengøringsforslag
-const PANEL_HEIGHT = 680;          // fast panelhøjde (ingen indre scroll)
-
 export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => void }) {
   // -------- Platform-valg --------
   const [platform, setPlatform] = useState<Platform>('');
@@ -35,35 +32,41 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
   // -------- Foto & video --------
-  const [photoPreview, setPhotoPreview] = useState<string>('');   // original
-  const [editedPreview, setEditedPreview] = useState<string>('');  // AI-version (stub)
+  const [photoPreview, setPhotoPreview] = useState<string>('');  // original
+  const [editedPreview, setEditedPreview] = useState<string>(''); // AI-version (stub i denne iteration)
   const [showVariant, setShowVariant] = useState<'original' | 'edited'>('original');
   const [applying, setApplying] = useState(false);
-  const [quickImageUrl, setQuickImageUrl] = useState<string>('');  // bruges i “Hurtigt opslag”
+  const [quickImageUrl, setQuickImageUrl] = useState<string>(''); // bruges i "Hurtigt opslag"
 
-  // -------- Foto-forslag (rå liste) --------
-  const photoItemsAll: Suggestion[] = useMemo(() => {
+  // >>> NYT: fast højde på forslagslisten (giver sikker scroll)
+  const SUGGESTIONS_LIST_HEIGHT = 320; // ca. ~6 kort
+
+  // -------- Foto-forslag (valgbar liste) --------
+  const photoItems: Suggestion[] = useMemo(() => {
     const cropIG: Suggestion[] = [
       { id: 'crop:ig:1-1',  title: 'Crop closer to the main subject', subtitle: 'Square 1:1 (1080×1080) – fills the feed evenly.', category: 'cropping', tag: 'cropping', excludes: ['crop:ig:4-5'] },
       { id: 'crop:ig:4-5',  title: 'Portrait crop for more feed space', subtitle: 'Portrait 4:5 (1080×1350) – performs well on IG feed.',  category: 'cropping', tag: 'cropping', excludes: ['crop:ig:1-1'] },
     ];
     const cropFB: Suggestion[] = [
-      { id: 'crop:fb:4-5',    title: 'Mobile-first portrait crop', subtitle: '4:5 (1080×1350) – nice on FB mobile feed.', category: 'cropping', tag: 'cropping', excludes: ['crop:fb:1.91-1'] },
-      { id: 'crop:fb:1.91-1', title: 'Wide link-style crop',       subtitle: '1.91:1 (1200×630) – classic wide look in feed.', category: 'cropping', tag: 'cropping', excludes: ['crop:fb:4-5'] },
+      { id: 'crop:fb:4-5',   title: 'Mobile-first portrait crop', subtitle: '4:5 (1080×1350) – nice on FB mobile feed.', category: 'cropping', tag: 'cropping', excludes: ['crop:fb:1.91-1'] },
+      { id: 'crop:fb:1.91-1',title: 'Wide link-style crop',       subtitle: '1.91:1 (1200×630) – classic wide look in feed.', category: 'cropping', tag: 'cropping', excludes: ['crop:fb:4-5'] },
     ];
-    const cleaning: Suggestion[] = [
+    // Rengøring — begræns til maks 4 (viser kun de vigtigste)
+    const cleaningAll: Suggestion[] = [
       { id: 'clean:remove-phone',  title: 'Remove phone in top left', subtitle: 'The phone distracts and steals attention.', category: 'cleaning', tag: 'cleaning' },
       { id: 'clean:remove-spoon',  title: 'Remove random spoon',      subtitle: 'The spoon looks out of place.',            category: 'cleaning', tag: 'cleaning' },
       { id: 'clean:reduce-carafe', title: 'Reduce water carafe visibility', subtitle: 'Make dessert and wine the main characters.', category: 'cleaning', tag: 'cleaning' },
-      // plads til en 4’er når AI’en finder én: fx glare/reflection, stray napkin, etc.
+      { id: 'clean:hide-cable',    title: 'Hide visible cable',       subtitle: 'Small distractions reduce quality.',      category: 'cleaning', tag: 'cleaning' },
+      { id: 'clean:wipe-smudges',  title: 'Wipe lens smudges',        subtitle: 'Slight haze reduces clarity.',            category: 'cleaning', tag: 'cleaning' },
     ];
+    const cleaning = cleaningAll.slice(0, 4); // <<<< maks 4
+
     const color: Suggestion[] = [
       { id: 'color:warm', title: 'Warm café tone',  subtitle: 'Cozy, inviting “café light”.', category: 'color', tag: 'color', excludes: ['color:cool'] },
       { id: 'color:cool', title: 'Cool Nordic look',subtitle: 'Muted colors with a soft matte feel.', category: 'color', tag: 'color', excludes: ['color:warm'] },
     ];
     const crops = platform === 'instagram' ? cropIG : platform === 'facebook' ? cropFB : [];
-    // Fast længde: 2 crops (platform), max 4 cleaning, 2 color
-    return [...crops.slice(0, 2), ...cleaning.slice(0, CLEANING_LIMIT), ...color.slice(0, 2)];
+    return [...crops, ...cleaning, ...color];
   }, [platform]);
 
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(new Set());
@@ -72,13 +75,13 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
   function togglePhotoSuggestion(id: string) {
     setSelectedPhotoIds(prev => {
       const next = new Set(prev);
-      const clicked = photoItemsAll.find(i => i.id === id);
+      const clicked = photoItems.find(i => i.id === id);
       if (!clicked) return next;
       if (next.has(id)) {
         next.delete(id);
       } else {
         (clicked.excludes || []).forEach(ex => next.delete(ex));
-        photoItemsAll.forEach(it => { if (it.excludes?.includes(id)) next.delete(it.id); });
+        photoItems.forEach(it => { if (it.excludes?.includes(id)) next.delete(it.id); });
         next.add(id);
       }
       return next;
@@ -99,7 +102,6 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
     ],
   }), []);
 
-  // Reset tekst-forslag ved platformskift
   useEffect(() => { setSuggestions([]); setSugErr(null); }, [platform]);
 
   async function refreshSuggestions() {
@@ -187,9 +189,9 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
   }
 
   function usePhotoInPost() {
-    const display = showVariant === 'edited' && editedPreview ? editedPreview : photoPreview;
-    if (!display) return;
-    setQuickImageUrl(display);
+    const displayUrl = showVariant === 'edited' && editedPreview ? editedPreview : photoPreview;
+    if (!displayUrl) return;
+    setQuickImageUrl(displayUrl);
     const el = document.getElementById('quick-post');
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -202,9 +204,15 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
       await new Promise(r => setTimeout(r, 400));
       setEditedPreview(photoPreview);
       setShowVariant('edited');
-    } finally { setApplying(false); }
+    } finally {
+      setApplying(false);
+    }
   }
-  function resetEdits() { setEditedPreview(''); setShowVariant('original'); }
+
+  function resetEdits() {
+    setEditedPreview('');
+    setShowVariant('original');
+  }
 
   // --- Planlæg & udgiv (UI-stub) ---
   const [planDate, setPlanDate] = useState<string>(''); 
@@ -214,7 +222,6 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
     alert(`(Demo) Plan sat: ${planDate || '—'} ${planTime || ''}\nPlatform: ${platform || '—'}\nNote: ${planNote || '—'}`);
   }
 
-  // UI helpers
   const chip = (text: string) => (
     <span style={{ fontSize: 11, padding: '2px 8px', border: '1px solid #eee', borderRadius: 999, background:'#fafafa' }}>
       {text}
@@ -305,7 +312,7 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
         </div>
       </Card>
 
-      {/* TO-KOLONNE LAYOUT: A (Hurtigt opslag) + B (Foto & video) */}
+      {/* TO-KOLONNE LAYOUT */}
       <div
         style={{
           display:'grid', gap:12,
@@ -313,70 +320,68 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
           alignItems:'start'
         }}
       >
-        {/* A) Hurtigt opslag – fast højde, uden indre scroll */}
-        <Card
-          title={`Hurtigt opslag ${platform ? `(${platform === 'facebook' ? 'Facebook' : 'Instagram'})` : ''}`}
-          id="quick-post"
-          style={{ height: PANEL_HEIGHT, display:'flex', flexDirection:'column' }}
-        >
-          <div style={{ display:'grid', alignContent:'start', gap:8, flex:1 }}>
-            <label style={label}>Titel (valgfri)</label>
-            <input value={title} onChange={e=>setTitle(e.target.value)} />
-            <label style={label}>Tekst</label>
-            <textarea
-              rows={6}
-              value={body}
-              onChange={e=>setBody(e.target.value)}
-              placeholder={
-                platform === 'instagram'
-                  ? 'Skriv din billedtekst… brug evt. emojis og 5-10 hashtags.'
-                  : platform === 'facebook'
-                    ? 'Skriv dit opslag… stil gerne et spørgsmål for at få flere kommentarer.'
-                    : 'Sæt et AI-forslag ind eller skriv selv…'
-              }
-            />
-            <div style={{ display:'flex', gap: 8, alignItems:'center', flexWrap:'wrap' }}>
-              <span style={{ fontSize: 12, color:'#666' }}>Tone:</span>
-              <select value={tone} onChange={e=>setTone(e.target.value as Tone)}>
-                <option value="neutral">Neutral/Venlig</option>
-                <option value="tilbud">Tilbud</option>
-                <option value="informativ">Informativ</option>
-                <option value="hyggelig">Hyggelig</option>
-              </select>
-              <button type="button" onClick={improveWithAI} style={btn}>Forbedr med AI</button>
-              <button type="button" onClick={saveDraft} disabled={saving} style={btn}>
-                {saving ? 'Gemmer…' : 'Gem som udkast'}
-              </button>
-              <Link href="/posts" style={pillLink}>Gå til dine opslag →</Link>
-            </div>
+        {/* A) Hurtigt opslag */}
+        <Card title={`Hurtigt opslag ${platform ? `(${platform === 'facebook' ? 'Facebook' : 'Instagram'})` : ''}`} id="quick-post" style={cardFrame}>
+          <div style={scrollFill}>
+            <div style={{ display:'grid', gap: 8 }}>
+              <label style={label}>Titel (valgfri)</label>
+              <input value={title} onChange={e=>setTitle(e.target.value)} />
+              <label style={label}>Tekst</label>
+              <textarea
+                rows={6}
+                value={body}
+                onChange={e=>setBody(e.target.value)}
+                placeholder={
+                  platform === 'instagram'
+                    ? 'Skriv din billedtekst… brug evt. emojis og 5-10 hashtags.'
+                    : platform === 'facebook'
+                      ? 'Skriv dit opslag… stil gerne et spørgsmål for at få flere kommentarer.'
+                      : 'Sæt et AI-forslag ind eller skriv selv…'
+                }
+              />
+              <div style={{ display:'flex', gap: 8, alignItems:'center', flexWrap:'wrap' }}>
+                <span style={{ fontSize: 12, color:'#666' }}>Tone:</span>
+                <select value={tone} onChange={e=>setTone(e.target.value as Tone)}>
+                  <option value="neutral">Neutral/Venlig</option>
+                  <option value="tilbud">Tilbud</option>
+                  <option value="informativ">Informativ</option>
+                  <option value="hyggelig">Hyggelig</option>
+                </select>
+                <button type="button" onClick={improveWithAI} style={btn}>Forbedr med AI</button>
+                <button type="button" onClick={saveDraft} disabled={saving} style={btn}>
+                  {saving ? 'Gemmer…' : 'Gem som udkast'}
+                </button>
+                <Link href="/posts" style={pillLink}>Gå til dine opslag →</Link>
+              </div>
 
-            {quickImageUrl && (
-              <div style={{ marginTop: 8 }}>
-                <img src={quickImageUrl} alt="Valgt billede"
-                     style={{ maxWidth:'100%', borderRadius:8, border:'1px solid #eee' }} />
-              </div>
-            )}
-            {platform === 'instagram' && (
-              <div style={{ fontSize:12, color:'#666' }}>
-                💡 Tip: Brug 5-10 hashtags, emojis og et spørgsmål for at øge engagement.
-              </div>
-            )}
-            {platform === 'facebook' && (
-              <div style={{ fontSize:12, color:'#666' }}>
-                💡 Tip: Opslag med spørgsmål får ofte flere kommentarer. Del gerne en personlig vinkel.
-              </div>
-            )}
+              {quickImageUrl && (
+                <div style={{ marginTop: 8 }}>
+                  <img src={quickImageUrl} alt="Valgt billede"
+                       style={{ maxWidth:'100%', borderRadius:8, border:'1px solid #eee' }} />
+                </div>
+              )}
+              {platform === 'instagram' && (
+                <div style={{ fontSize:12, color:'#666' }}>
+                  💡 Tip: Brug 5-10 hashtags, emojis og et spørgsmål for at øge engagement.
+                </div>
+              )}
+              {platform === 'facebook' && (
+                <div style={{ fontSize:12, color:'#666' }}>
+                  💡 Tip: Opslag med spørgsmål får ofte flere kommentarer. Del gerne en personlig vinkel.
+                </div>
+              )}
+            </div>
             {statusMsg && <p style={{ marginTop: 8, color: statusMsg.startsWith('Fejl') ? '#b00' : '#222' }}>{statusMsg}</p>}
           </div>
         </Card>
 
-        {/* B) Foto & video – fast højde; ingen indre scroll; fast antal forslag */}
-        <Card title="Foto & video" style={{ height: PANEL_HEIGHT, display:'flex', flexDirection:'column' }}>
+        {/* B) Foto & video */}
+        <Card title="Foto & video" style={cardFrame}>
           {!photoPreview ? (
             <div
               style={{
                 border:'2px dashed #ddd', borderRadius:12, padding:20,
-                minHeight:140, display:'grid', placeItems:'center', flex:1
+                minHeight:140, display:'grid', placeItems:'center'
               }}
             >
               <div style={{ textAlign:'center' }}>
@@ -397,7 +402,15 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
               </div>
             </div>
           ) : (
-            <div style={{ display:'grid', gridTemplateRows:'auto auto auto', gap:8, flex:1 }}>
+            <div
+              style={{
+                flex: 1,
+                minHeight: 0,
+                display:'grid',
+                gridTemplateRows:'auto auto auto', // billede, knapper, LISTE (fast højde)
+                gap:8
+              }}
+            >
               {/* Billed-preview */}
               <img
                 src={displayUrl}
@@ -441,10 +454,10 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
                 </button>
               </div>
 
-              {/* Forslag – fast længde (ingen overflow/scroll) */}
-              <div>
+              {/* >>> FAST HØJDE + SCROLL på selve listen (går ALDRIG over kalender) */}
+              <div style={{ height: SUGGESTIONS_LIST_HEIGHT, overflowY:'auto', minHeight: 0, paddingRight: 2 }}>
                 <PhotoSuggestions
-                  items={photoItemsAll}
+                  items={photoItems}
                   selected={selectedPhotoIds}
                   onToggle={togglePhotoSuggestion}
                 />
@@ -487,6 +500,24 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
 
 /* ---------- styles ---------- */
 
+const PANEL_HEIGHT = 680;
+
+const cardFrame: React.CSSProperties = {
+  height: PANEL_HEIGHT,
+  display: 'flex',
+  flexDirection: 'column',
+  overflow: 'hidden'
+};
+
+const scrollFill: React.CSSProperties = {
+  flex: 1,
+  minHeight: 0,
+  overflow: 'auto',
+  display: 'grid',
+  alignContent: 'start',
+  gap: 8
+};
+
 const label: React.CSSProperties = { fontSize:12, color:'#666' };
 
 const btn: React.CSSProperties = {
@@ -501,7 +532,7 @@ const btn: React.CSSProperties = {
 const pillLink: React.CSSProperties = {
   display:'inline-block',
   fontSize:12,
-  border:'1px solid '#ddd',
+  border:'1px solid #ddd',
   borderRadius:999,
   padding:'4px 10px',
   background:'#fafafa',
