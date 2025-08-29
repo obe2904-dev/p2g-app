@@ -314,62 +314,64 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
           alignItems:'start'
         }}
       >
-        {/* A) Hurtigt opslag – fast højde, intern scroll */}
+        {/* A) Hurtigt opslag – fast højde, intern scroll (via fillCol + scrollFill) */}
         <Card
           title={`Hurtigt opslag ${platform ? `(${platform === 'facebook' ? 'Facebook' : 'Instagram'})` : ''}`}
           id="quick-post"
           style={{ ...cardFrame }}
         >
-          <div style={scrollFill}>
-            <div style={{ display:'grid', gap: 8 }}>
-              <label style={label}>Titel (valgfri)</label>
-              <input value={title} onChange={e=>setTitle(e.target.value)} />
-              <label style={label}>Tekst</label>
-              <textarea
-                rows={6}
-                value={body}
-                onChange={e=>setBody(e.target.value)}
-                placeholder={
-                  platform === 'instagram'
-                    ? 'Skriv din billedtekst… brug evt. emojis og 5-10 hashtags.'
-                    : platform === 'facebook'
-                      ? 'Skriv dit opslag… stil gerne et spørgsmål for at få flere kommentarer.'
-                      : 'Sæt et AI-forslag ind eller skriv selv…'
-                }
-              />
-              <div style={{ display:'flex', gap: 8, alignItems:'center', flexWrap:'wrap' }}>
-                <span style={{ fontSize: 12, color:'#666' }}>Tone:</span>
-                <select value={tone} onChange={e=>setTone(e.target.value as Tone)}>
-                  <option value="neutral">Neutral/Venlig</option>
-                  <option value="tilbud">Tilbud</option>
-                  <option value="informativ">Informativ</option>
-                  <option value="hyggelig">Hyggelig</option>
-                </select>
-                <button type="button" onClick={improveWithAI} style={btn}>Forbedr med AI</button>
-                <button type="button" onClick={saveDraft} disabled={saving} style={btn}>
-                  {saving ? 'Gemmer…' : 'Gem som udkast'}
-                </button>
-                <Link href="/posts" style={pillLink}>Gå til dine opslag →</Link>
-              </div>
+          <div style={fillCol}>
+            <div style={scrollFill}>
+              <div style={{ display:'grid', gap: 8 }}>
+                <label style={label}>Titel (valgfri)</label>
+                <input value={title} onChange={e=>setTitle(e.target.value)} />
+                <label style={label}>Tekst</label>
+                <textarea
+                  rows={6}
+                  value={body}
+                  onChange={e=>setBody(e.target.value)}
+                  placeholder={
+                    platform === 'instagram'
+                      ? 'Skriv din billedtekst… brug evt. emojis og 5-10 hashtags.'
+                      : platform === 'facebook'
+                        ? 'Skriv dit opslag… stil gerne et spørgsmål for at få flere kommentarer.'
+                        : 'Sæt et AI-forslag ind eller skriv selv…'
+                  }
+                />
+                <div style={{ display:'flex', gap: 8, alignItems:'center', flexWrap:'wrap' }}>
+                  <span style={{ fontSize: 12, color:'#666' }}>Tone:</span>
+                  <select value={tone} onChange={e=>setTone(e.target.value as Tone)}>
+                    <option value="neutral">Neutral/Venlig</option>
+                    <option value="tilbud">Tilbud</option>
+                    <option value="informativ">Informativ</option>
+                    <option value="hyggelig">Hyggelig</option>
+                  </select>
+                  <button type="button" onClick={improveWithAI} style={btn}>Forbedr med AI</button>
+                  <button type="button" onClick={saveDraft} disabled={saving} style={btn}>
+                    {saving ? 'Gemmer…' : 'Gem som udkast'}
+                  </button>
+                  <Link href="/posts" style={pillLink}>Gå til dine opslag →</Link>
+                </div>
 
-              {quickImageUrl && (
-                <div style={{ marginTop: 8 }}>
-                  <img src={quickImageUrl} alt="Valgt billede"
-                       style={{ maxWidth:'100%', borderRadius:8, border:'1px solid #eee' }} />
-                </div>
-              )}
-              {platform === 'instagram' && (
-                <div style={{ fontSize:12, color:'#666' }}>
-                  💡 Tip: Brug 5-10 hashtags, emojis og et spørgsmål for at øge engagement.
-                </div>
-              )}
-              {platform === 'facebook' && (
-                <div style={{ fontSize:12, color:'#666' }}>
-                  💡 Tip: Opslag med spørgsmål får ofte flere kommentarer. Del gerne en personlig vinkel.
-                </div>
-              )}
+                {quickImageUrl && (
+                  <div style={{ marginTop: 8 }}>
+                    <img src={quickImageUrl} alt="Valgt billede"
+                        style={{ maxWidth:'100%', borderRadius:8, border:'1px solid #eee' }} />
+                  </div>
+                )}
+                {platform === 'instagram' && (
+                  <div style={{ fontSize:12, color:'#666' }}>
+                    💡 Tip: Brug 5-10 hashtags, emojis og et spørgsmål for at øge engagement.
+                  </div>
+                )}
+                {platform === 'facebook' && (
+                  <div style={{ fontSize:12, color:'#666' }}>
+                    💡 Tip: Opslag med spørgsmål får ofte flere kommentarer. Del gerne en personlig vinkel.
+                  </div>
+                )}
+              </div>
+              {statusMsg && <p style={{ marginTop: 8, color: statusMsg.startsWith('Fejl') ? '#b00' : '#222' }}>{statusMsg}</p>}
             </div>
-            {statusMsg && <p style={{ marginTop: 8, color: statusMsg.startsWith('Fejl') ? '#b00' : '#222' }}>{statusMsg}</p>}
           </div>
         </Card>
 
@@ -400,60 +402,53 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
               </div>
             </div>
           ) : (
-            <div
-              style={{
-                flex: 1,
-                minHeight: 0,
-                display:'grid',
-                gridTemplateRows:'auto auto 1fr',
-                gap:8
-              }}
-            >
-              {/* Billed-preview */}
-              <img
-                src={displayUrl}
-                alt="Preview"
-                style={{ width:'100%', maxHeight:260, objectFit:'cover', borderRadius:8, border:'1px solid #eee' }}
-              />
+            <div style={fillCol}>
+              {/* Øverste del (ikke-scrollende): billede + knapper */}
+              <div>
+                <img
+                  src={displayUrl}
+                  alt="Preview"
+                  style={{ width:'100%', maxHeight:260, objectFit:'cover', borderRadius:8, border:'1px solid #eee' }}
+                />
 
-              {/* Knapper + toggles */}
-              <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'center' }}>
-                <label style={{ display:'flex', gap:6, alignItems:'center', fontSize:13 }}>
-                  <input type="radio" name="variant" checked={showVariant==='original'} onChange={()=>setShowVariant('original')} />
-                  Original
-                </label>
-                <label style={{ display:'flex', gap:6, alignItems:'center', fontSize:13 }}>
-                  <input type="radio" name="variant" checked={showVariant==='edited'} onChange={()=>setShowVariant('edited')} disabled={!editedPreview}/>
-                  AI redigeret
-                </label>
+                <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'center', marginTop:8 }}>
+                  <label style={{ display:'flex', gap:6, alignItems:'center', fontSize:13 }}>
+                    <input type="radio" name="variant" checked={showVariant==='original'} onChange={()=>setShowVariant('original')} />
+                    Original
+                  </label>
+                  <label style={{ display:'flex', gap:6, alignItems:'center', fontSize:13 }}>
+                    <input type="radio" name="variant" checked={showVariant==='edited'} onChange={()=>setShowVariant('edited')} disabled={!editedPreview}/>
+                    AI redigeret
+                  </label>
 
-                <label
-                  style={{
-                    marginLeft:'auto',
-                    display:'inline-block', padding:'8px 10px',
-                    border:'1px solid #111', borderRadius:8,
-                    cursor:'pointer', background:'#fff', color:'#111'
-                  }}
-                >
-                  Erstat billede
-                  <input type="file" accept="image/*" onChange={onPickLocalPhoto} style={{ display:'none' }} />
-                </label>
-                <button type="button" onClick={()=>{ setPhotoPreview(''); setEditedPreview(''); setShowVariant('original'); }} style={{ ...btn, background:'#fafafa', color:'#111', borderColor:'#ddd' }}>
-                  Fjern
-                </button>
-                <button type="button" onClick={usePhotoInPost} style={btn}>
-                  Brug {showVariant==='edited' && editedPreview ? 'AI-version' : 'original'} i opslag
-                </button>
-                <button type="button" onClick={applySelectedEdits} disabled={selectedPhotoIds.size===0 || !photoPreview || applying} style={btn}>
-                  {applying ? 'Anvender…' : 'Anvend valgte ændringer'}
-                </button>
-                <button type="button" onClick={resetEdits} disabled={!editedPreview} style={{ ...btn, background:'#fafafa', color:'#111', borderColor:'#ddd' }}>
-                  Nulstil
-                </button>
+                  <label
+                    style={{
+                      marginLeft:'auto',
+                      display:'inline-block', padding:'8px 10px',
+                      border:'1px solid #111', borderRadius:8,
+                      cursor:'pointer', background:'#fff', color:'#111'
+                    }}
+                  >
+                    Erstat billede
+                    <input type="file" accept="image/*" onChange={onPickLocalPhoto} style={{ display:'none' }} />
+                  </label>
+                  <button type="button" onClick={()=>{ setPhotoPreview(''); setEditedPreview(''); setShowVariant('original'); }} style={{ ...btn, background:'#fafafa', color:'#111', borderColor:'#ddd' }}>
+                    Fjern
+                  </button>
+                  <button type="button" onClick={usePhotoInPost} style={btn}>
+                    Brug {showVariant==='edited' && editedPreview ? 'AI-version' : 'original'} i opslag
+                  </button>
+                  <button type="button" onClick={applySelectedEdits} disabled={selectedPhotoIds.size===0 || !photoPreview || applying} style={btn}>
+                    {applying ? 'Anvender…' : 'Anvend valgte ændringer'}
+                  </button>
+                  <button type="button" onClick={resetEdits} disabled={!editedPreview} style={{ ...btn, background:'#fafafa', color:'#111', borderColor:'#ddd' }}>
+                    Nulstil
+                  </button>
+                </div>
               </div>
 
-              {/* Forslag – SCROLL herinde; PhotoSuggestions har sticky bund */}
-              <div style={{ overflow:'auto', minHeight:0, paddingRight:2 }}>
+              {/* Scroll-område med forslag (sticky tæller inde i PhotoSuggestions) */}
+              <div style={scrollFill}>
                 <PhotoSuggestions
                   items={photoItems}
                   selected={selectedPhotoIds}
@@ -507,6 +502,16 @@ const cardFrame: React.CSSProperties = {
   overflow: 'hidden'
 };
 
+// Fælles “fyld kolonnen” wrapper: gør child-områder i kortet højde-aware
+const fillCol: React.CSSProperties = {
+  height: '100%',
+  minHeight: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 8,
+};
+
+// Scrollbart område inde i fillCol
 const scrollFill: React.CSSProperties = {
   flex: 1,
   minHeight: 0,
