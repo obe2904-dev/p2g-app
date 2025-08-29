@@ -14,56 +14,26 @@ type Props = {
   items: Suggestion[];
   selected: Set<string>;
   onToggle: (id: string) => void;
-
-  /** Ny: kort prosa-intro over listen */
-  summary?: string;
-
-  /** Ny: knap i bunden til at generere AI-preview */
-  onApply?: () => void;
-  applyLabel?: string;
-  applyDisabled?: boolean;
-  applyBusy?: boolean;
 };
 
-export default function PhotoSuggestions({
-  items,
-  selected,
-  onToggle,
-  summary,
-  onApply,
-  applyLabel = 'Generér preview',
-  applyDisabled,
-  applyBusy,
-}: Props) {
-  const count = selected.size;
+const tagLabel: Record<Suggestion['tag'], string> = {
+  cropping: 'Beskæring',
+  cleaning: 'Rengøring',
+  color: 'Farver & lys'
+};
+
+export default function PhotoSuggestions({ items, selected, onToggle }: Props) {
+  // hvor mange kan maks vælges (givet konflikter)
+  const maxSelectable =
+    (items.some(i => i.tag === 'cropping') ? 1 : 0) +
+    (items.some(i => i.tag === 'color') ? 1 : 0) +
+    items.filter(i => i.tag === 'cleaning').length;
+
+  const applied = selected.size;
 
   return (
-    <div style={{ display: 'grid', gap: 10 }}>
-      {/* Prosa-intro */}
-      {summary && (
-        <div
-          style={{
-            padding: 10,
-            border: '1px solid #eee',
-            borderRadius: 8,
-            background: '#fafafa',
-            fontSize: 13,
-            color: '#333',
-          }}
-        >
-          {summary}
-        </div>
-      )}
-
-      {/* Grid af forslag-kort */}
-      <div
-        style={{
-          display: 'grid',
-          gap: 10,
-          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-          alignItems: 'stretch',
-        }}
-      >
+    <div style={wrap}>
+      <div style={list}>
         {items.map((it) => {
           const isOn = selected.has(it.id);
           return (
@@ -71,101 +41,160 @@ export default function PhotoSuggestions({
               key={it.id}
               type="button"
               onClick={() => onToggle(it.id)}
-              style={{
-                textAlign: 'left',
-                border: isOn ? '2px solid #111' : '1px solid #eaeaea',
-                background: '#fff',
-                borderRadius: 10,
-                padding: 12,
-                cursor: 'pointer',
-                position: 'relative',
-                minHeight: 90,
-              }}
+              style={{ ...row, ...(isOn ? rowActive : null) }}
             >
-              {/* “ikon”/tjekmærke i højre top */}
-              <div
-                aria-hidden
-                style={{
-                  position: 'absolute',
-                  top: 8,
-                  right: 8,
-                  width: 20,
-                  height: 20,
-                  borderRadius: 999,
-                  border: '1px solid #ddd',
-                  background: isOn ? '#111' : '#fff',
-                  display: 'grid',
-                  placeItems: 'center',
-                  color: isOn ? '#fff' : '#999',
-                  fontSize: 12,
-                  lineHeight: 1,
-                }}
-                title={isOn ? 'Valgt' : 'Vælg'}
-              >
-                {isOn ? '✓' : '•'}
-              </div>
-
-              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }}>{it.title}</div>
-              {it.subtitle && (
-                <div style={{ fontSize: 12, color: '#666', lineHeight: 1.35 }}>{it.subtitle}</div>
-              )}
-              <div style={{ marginTop: 8 }}>
+              {/* venstre: check + lille kategori-mærkat */}
+              <div style={left}>
                 <span
+                  aria-hidden
                   style={{
-                    fontSize: 11,
-                    border: '1px solid #eee',
-                    background: '#fafafa',
-                    padding: '2px 8px',
-                    borderRadius: 999,
-                    color: '#444',
+                    ...check,
+                    ...(isOn ? checkOn : checkOff),
                   }}
                 >
-                  {it.category === 'cropping'
-                    ? 'Beskæring'
-                    : it.category === 'cleaning'
-                    ? 'Rengøring'
-                    : 'Farver & lys'}
+                  {isOn ? '✓' : ''}
                 </span>
+                <span style={chipSmall}>{tagLabel[it.tag]}</span>
               </div>
+
+              {/* midte: titel + undertekst */}
+              <div style={{ minWidth: 0 }}>
+                <div style={title}>{it.title}</div>
+                {it.subtitle && <div style={sub}>{it.subtitle}</div>}
+              </div>
+
+              {/* højre: (tom spacer – klar til ikoner senere) */}
+              <div />
             </button>
           );
         })}
       </div>
 
-      {/* Footer: tæller + “Generér preview” */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          gap: 10,
-          alignItems: 'center',
-          borderTop: '1px solid #eee',
-          paddingTop: 8,
-          marginTop: 2,
-        }}
-      >
-        <div style={{ fontSize: 12, color: '#555' }}>
-          Valgt: <strong>{count}</strong>
+      {/* sticky bund – tæller + progress */}
+      <div style={stickyBar}>
+        <div style={stickyLabel}>
+          Valgte ændringer
+          <span style={{ fontWeight: 600, marginLeft: 8 }}>{applied} / {maxSelectable}</span>
         </div>
-
-        {onApply && (
-          <button
-            type="button"
-            onClick={onApply}
-            disabled={!!applyDisabled || !!applyBusy}
+        <div style={progressTrack}>
+          <div
             style={{
-              padding: '8px 10px',
-              border: '1px solid #111',
-              background: applyDisabled ? '#f2f2f2' : '#111',
-              color: applyDisabled ? '#999' : '#fff',
-              borderRadius: 8,
-              cursor: applyDisabled ? 'not-allowed' : 'pointer',
+              ...progressFill,
+              width: `${Math.min(100, (applied / Math.max(1, maxSelectable)) * 100)}%`,
             }}
-          >
-            {applyBusy ? 'Genererer…' : applyLabel}
-          </button>
-        )}
+          />
+        </div>
       </div>
     </div>
   );
 }
+
+/* ---------- styles ---------- */
+
+const wrap: React.CSSProperties = {
+  // ingen fixed height her – vi lader PARENT scrolle.
+  display: 'grid',
+  gridTemplateRows: '1fr auto',
+  gap: 8,
+  minHeight: 0, // vigtige for at sticky kan virke i scroll-containeren
+};
+
+const list: React.CSSProperties = {
+  display: 'grid',
+  gap: 8,
+  minHeight: 0,
+};
+
+const row: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'auto 1fr auto',
+  gap: 10,
+  alignItems: 'start',
+  textAlign: 'left',
+  padding: 12,
+  border: '1px solid #eee',
+  borderRadius: 12,
+  background: '#fff',
+  cursor: 'pointer',
+};
+
+const rowActive: React.CSSProperties = {
+  boxShadow: 'inset 0 0 0 2px #111',
+};
+
+const left: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+  minWidth: 0,
+};
+
+const check: React.CSSProperties = {
+  display: 'inline-grid',
+  placeItems: 'center',
+  width: 20,
+  height: 20,
+  borderRadius: 999,
+  border: '1px solid #ddd',
+  fontSize: 12,
+  lineHeight: '1',
+  userSelect: 'none',
+};
+
+const checkOn: React.CSSProperties = {
+  background: '#111',
+  color: '#fff',
+  borderColor: '#111',
+};
+
+const checkOff: React.CSSProperties = {
+  background: '#fff',
+  color: 'transparent',
+};
+
+const chipSmall: React.CSSProperties = {
+  fontSize: 11,
+  padding: '2px 6px',
+  border: '1px solid #eee',
+  borderRadius: 999,
+  background: '#fafafa',
+  whiteSpace: 'nowrap',
+};
+
+const title: React.CSSProperties = {
+  fontWeight: 600,
+  fontSize: 14,
+};
+
+const sub: React.CSSProperties = {
+  color: '#666',
+  fontSize: 12,
+  marginTop: 2,
+};
+
+const stickyBar: React.CSSProperties = {
+  position: 'sticky',
+  bottom: 0,
+  background: '#fff',
+  paddingTop: 8,
+  borderTop: '1px solid #eee',
+};
+
+const stickyLabel: React.CSSProperties = {
+  fontSize: 13,
+  color: '#444',
+  marginBottom: 6,
+};
+
+const progressTrack: React.CSSProperties = {
+  height: 8,
+  background: '#f1f1f5',
+  borderRadius: 999,
+  overflow: 'hidden',
+};
+
+const progressFill: React.CSSProperties = {
+  height: '100%',
+  background: '#111',
+  borderRadius: 999,
+};
