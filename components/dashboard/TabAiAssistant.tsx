@@ -31,42 +31,38 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
   const [saving, setSaving] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
-  // -------- Foto & video (upload/preview) --------
-  const [photoPreview, setPhotoPreview] = useState<string>('');   // original preview
-  const [editedUrl, setEditedUrl] = useState<string>('');         // AI-redigeret (stub)
-  const [imageMode, setImageMode] = useState<'original'|'ai'>('original'); // hvilken der vises/bruges
-  const [applyMsg, setApplyMsg] = useState<string | null>(null);
+  // -------- Foto & video --------
+  const [photoPreview, setPhotoPreview] = useState<string>('');  // original
+  const [editedPreview, setEditedPreview] = useState<string>(''); // AI-version (stub i denne iteration)
+  const [showVariant, setShowVariant] = useState<'original' | 'edited'>('original');
+  const [applying, setApplying] = useState(false);
+  const [quickImageUrl, setQuickImageUrl] = useState<string>(''); // bruges i "Hurtigt opslag"
 
-  // Tekst-delen bruger dette som "valgte foto"
-  const [quickImageUrl, setQuickImageUrl] = useState<string>('');
-
-  const displayUrl = imageMode === 'ai' && editedUrl ? editedUrl : photoPreview;
-
-  // -------- Foto-forslag --------
+  // -------- Foto-forslag (valgbar liste) --------
   const photoItems: Suggestion[] = useMemo(() => {
     const cropIG: Suggestion[] = [
-      { id: 'crop:ig:1-1',  title: 'Crop closer to the main subject', subtitle: 'Square 1:1 (1080×1080) – fills the feed evenly.', category: 'cropping', tag: 'cropping', excludes: ['crop:ig:4-5'] },
-      { id: 'crop:ig:4-5',  title: 'Portrait crop for more feed space', subtitle: 'Portrait 4:5 (1080×1350) – performs well on IG feed.',  category: 'cropping', tag: 'cropping', excludes: ['crop:ig:1-1'] },
+      { id: 'crop:ig:1-1',  title: 'Crop closer to the main subject', subtitle: 'Square 1:1 (1080×1080) – fills the feed evenly.', category: 'cropping', tag: 'Beskæring', excludes: ['crop:ig:4-5'] },
+      { id: 'crop:ig:4-5',  title: 'Portrait crop for more feed space', subtitle: 'Portrait 4:5 (1080×1350) – performs well on IG feed.',  category: 'cropping', tag: 'Beskæring', excludes: ['crop:ig:1-1'] },
     ];
     const cropFB: Suggestion[] = [
-      { id: 'crop:fb:4-5',    title: 'Mobile-first portrait crop', subtitle: '4:5 (1080×1350) – nice on FB mobile feed.', category: 'cropping', tag: 'cropping', excludes: ['crop:fb:1.91-1'] },
-      { id: 'crop:fb:1.91-1', title: 'Wide link-style crop',       subtitle: '1.91:1 (1200×630) – classic wide look in feed.', category: 'cropping', tag: 'cropping', excludes: ['crop:fb:4-5'] },
+      { id: 'crop:fb:4-5',   title: 'Mobile-first portrait crop', subtitle: '4:5 (1080×1350) – nice on FB mobile feed.', category: 'cropping', tag: 'Beskæring', excludes: ['crop:fb:1.91-1'] },
+      { id: 'crop:fb:1.91-1',title: 'Wide link-style crop',       subtitle: '1.91:1 (1200×630) – classic wide look in feed.', category: 'cropping', tag: 'Beskæring', excludes: ['crop:fb:4-5'] },
     ];
     const cleaning: Suggestion[] = [
-      { id: 'clean:remove-phone',  title: 'Remove phone in top left', subtitle: 'The phone distracts and steals attention.', category: 'cleaning', tag: 'cleaning' },
-      { id: 'clean:remove-spoon',  title: 'Remove random spoon',      subtitle: 'The spoon looks out of place.',            category: 'cleaning', tag: 'cleaning' },
-      { id: 'clean:reduce-carafe', title: 'Reduce water carafe visibility', subtitle: 'Make dessert and wine the main characters.', category: 'cleaning', tag: 'cleaning' },
+      { id: 'clean:remove-phone',  title: 'Remove phone in top left', subtitle: 'The phone distracts and steals attention.', category: 'cleaning', tag: 'Rengøring' },
+      { id: 'clean:remove-spoon',  title: 'Remove random spoon',      subtitle: 'The spoon looks out of place.',            category: 'cleaning', tag: 'Rengøring' },
+      { id: 'clean:reduce-carafe', title: 'Reduce water carafe visibility', subtitle: 'Make dessert and wine the main characters.', category: 'cleaning', tag: 'Rengøring' },
     ];
     const color: Suggestion[] = [
-      { id: 'color:warm', title: 'Warm café tone',  subtitle: 'Cozy, inviting “café light”.', category: 'color', tag: 'color', excludes: ['color:cool'] },
-      { id: 'color:cool', title: 'Cool Nordic look',subtitle: 'Muted colors with a soft matte feel.', category: 'color', tag: 'color', excludes: ['color:warm'] },
+      { id: 'color:warm', title: 'Warm café tone',  subtitle: 'Cozy, inviting “café light”.', category: 'color', tag: 'Farver & lys', excludes: ['color:cool'] },
+      { id: 'color:cool', title: 'Cool Nordic look',subtitle: 'Muted colors with a soft matte feel.', category: 'color', tag: 'Farver & lys', excludes: ['color:warm'] },
     ];
     const crops = platform === 'instagram' ? cropIG : platform === 'facebook' ? cropFB : [];
     return [...crops, ...cleaning, ...color];
   }, [platform]);
 
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(new Set());
-  useEffect(() => { setSelectedPhotoIds(new Set()); setEditedUrl(''); setImageMode('original'); }, [platform]);
+  useEffect(() => { setSelectedPhotoIds(new Set()); setEditedPreview(''); setShowVariant('original'); }, [platform]);
 
   function togglePhotoSuggestion(id: string) {
     setSelectedPhotoIds(prev => {
@@ -85,14 +81,6 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
     });
   }
 
-  // Tæller (maks = 1 crop + N cleaning + 1 color)
-  const totalPossible = useMemo(() => {
-    const hasCrop = photoItems.some(i => i.category === 'cropping');
-    const hasColor = photoItems.some(i => i.category === 'color');
-    const cleaners = photoItems.filter(i => i.category === 'cleaning').length;
-    return (hasCrop ? 1 : 0) + cleaners + (hasColor ? 1 : 0);
-  }, [photoItems]);
-
   // ---- Metachips (kun UI for tekstforslag) ----
   const metas: Record<'facebook' | 'instagram', SuggestionMeta[]> = useMemo(() => ({
     facebook: [
@@ -107,6 +95,7 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
     ],
   }), []);
 
+  // Reset tekst-forslag ved platformskift
   useEffect(() => { setSuggestions([]); setSugErr(null); }, [platform]);
 
   async function refreshSuggestions() {
@@ -127,14 +116,13 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
 
       if (!resp.ok) throw new Error(await resp.text());
       const data = await resp.json();
-      setSuggestions(Array.isArray(data.suggestions) ? data.suggestions.slice(0, 3) : []);
+      const arr = Array.isArray(data.suggestions) ? data.suggestions.slice(0, 3) : [];
+      setSuggestions(arr);
       onAiTextUse?.();
     } catch (e: any) {
       setSugErr(e.message || 'Kunne ikke hente forslag');
       setSuggestions([]);
-    } finally {
-      setLoadingSug(false);
-    }
+    } finally { setLoadingSug(false); }
   }
 
   function pickSuggestion(s: string) {
@@ -178,7 +166,8 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
       });
       if (!r.ok) { setStatusMsg('Fejl: ' + (await r.text())); return; }
 
-      setStatusMsg('Gemt som udkast ✔'); setTitle(''); setBody('');
+      setStatusMsg('Gemt som udkast ✔');
+      setTitle(''); setBody('');
     } catch (e:any) { setStatusMsg('Fejl: ' + e.message); }
     finally { setSaving(false); }
   }
@@ -189,41 +178,42 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
     if (!f) return;
     const url = URL.createObjectURL(f);
     setPhotoPreview(url);
-    setEditedUrl('');
-    setImageMode('original');
+    setEditedPreview('');
+    setShowVariant('original');
   }
+
   function usePhotoInPost() {
+    const displayUrl = showVariant === 'edited' && editedPreview ? editedPreview : photoPreview;
     if (!displayUrl) return;
     setQuickImageUrl(displayUrl);
     const el = document.getElementById('quick-post');
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
-  function resetPhoto() {
-    setPhotoPreview('');
-    setEditedUrl('');
-    setImageMode('original');
-    setSelectedPhotoIds(new Set());
-    setApplyMsg(null);
+
+  // Anvend valgte forslag (stub – laver “edited = original” indtil backend er klar)
+  async function applySelectedEdits() {
+    if (!photoPreview || selectedPhotoIds.size === 0) return;
+    setApplying(true);
+    try {
+      // Her kalder vi senere /api/media/edit med selectedPhotoIds
+      // Stub: vis bare samme billede som “AI redigeret”
+      await new Promise(r => setTimeout(r, 500));
+      setEditedPreview(photoPreview);
+      setShowVariant('edited');
+    } finally {
+      setApplying(false);
+    }
   }
 
-  // Anvend valgte ændringer (stub – sætter editedUrl = photoPreview for nu)
-  async function applyEdits() {
-    if (!photoPreview) { setApplyMsg('Upload et billede først.'); return; }
-    if (selectedPhotoIds.size === 0) { setApplyMsg('Vælg mindst ét forslag.'); return; }
-    setApplyMsg('Anvender ændringer…');
-    // TODO: Kald din /api/media/edit med { photoPreview, selectedPhotoIds, platform }
-    // For nu simulerer vi resultat:
-    setTimeout(() => {
-      setEditedUrl(photoPreview);     // i MVP viser vi samme billede
-      setImageMode('ai');
-      setApplyMsg('Ændringer anvendt (demo) ✔');
-    }, 500);
+  function resetEdits() {
+    setEditedPreview('');
+    setShowVariant('original');
   }
 
   // --- Planlæg & udgiv (UI-stub) ---
-  const [planDate, setPlanDate] = useState<string>('');
-  const [planTime, setPlanTime] = useState<string>('');
-  const [planNote, setPlanNote]   = useState<string>('');
+  const [planDate, setPlanDate] = useState<string>(''); 
+  const [planTime, setPlanTime] = useState<string>(''); 
+  const [planNote, setPlanNote] = useState<string>(''); 
   function planStub() {
     alert(`(Demo) Plan sat: ${planDate || '—'} ${planTime || ''}\nPlatform: ${platform || '—'}\nNote: ${planNote || '—'}`);
   }
@@ -235,8 +225,7 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
     </span>
   );
 
-  const selectedCount = selectedPhotoIds.size;
-  const progressPct = totalPossible ? Math.min(100, Math.round((selectedCount / totalPossible) * 100)) : 0;
+  const displayUrl = showVariant === 'edited' && editedPreview ? editedPreview : photoPreview;
 
   return (
     <section style={{ display: 'grid', gap: 16 }}>
@@ -320,19 +309,19 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
         </div>
       </Card>
 
-      {/* TO-KOLONNE LAYOUT med faste rammer og intern scroll */}
+      {/* TO-KOLONNE LAYOUT: A (Hurtigt opslag) + B (Foto & video) */}
       <div
         style={{
           display:'grid', gap:12,
-          gridTemplateColumns:'repeat(auto-fit, minmax(420px, 1fr))',
+          gridTemplateColumns:'repeat(auto-fit, minmax(340px, 1fr))',
           alignItems:'start'
         }}
       >
-        {/* A) Hurtigt opslag – fast højde, scroll indeni */}
+        {/* A) Hurtigt opslag – fast højde, intern scroll */}
         <Card
           title={`Hurtigt opslag ${platform ? `(${platform === 'facebook' ? 'Facebook' : 'Instagram'})` : ''}`}
           id="quick-post"
-          style={{ height: PANEL_HEIGHT, overflow:'hidden' }}
+          style={{ height: PANEL_HEIGHT }}
         >
           <div style={scrollArea}>
             <div style={{ display:'grid', gap: 8 }}>
@@ -387,60 +376,62 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
           </div>
         </Card>
 
-        {/* B) Foto & video – fast højde, BILLEDE FAST + LISTE SCROLLER + FAST FOOTER */}
-        <Card title="Foto & video" style={{ height: PANEL_HEIGHT, overflow:'hidden' }}>
-          <div
-            style={{
-              height:'100%',
-              display:'grid',
-              gridTemplateRows:'auto auto 1fr auto',
-              gap:8,
-              overflow:'hidden' // forhindrer overlap udenfor kortet
-            }}
-          >
-            {/* (1) Foto (ikke i scroll) */}
-            {!photoPreview ? (
-              <div
-                style={{
-                  border:'2px dashed #ddd', borderRadius:12, padding:20,
-                  minHeight:140, display:'grid', placeItems:'center'
-                }}
-              >
-                <div style={{ textAlign:'center' }}>
-                  <div style={{ fontSize:16, marginBottom:6 }}>Upload et billede</div>
-                  <div style={{ color:'#666', marginBottom: 10 }}>
-                    Få hurtigt preview nu. (Beskæring/AI-forbedring kommer i næste trin)
-                  </div>
-                  <label
-                    style={{
-                      display:'inline-block', padding:'10px 14px',
-                      border:'1px solid #111', borderRadius:8,
-                      cursor:'pointer', background:'#111', color:'#fff'
-                    }}
-                  >
-                    Vælg fil
-                    <input type="file" accept="image/*" onChange={onPickLocalPhoto} style={{ display:'none' }} />
-                  </label>
+        {/* B) Foto & video – fast højde; billede + knapper faste; kun forslag scroller */}
+        <Card title="Foto & video" style={{ height: PANEL_HEIGHT }}>
+          {!photoPreview ? (
+            <div
+              style={{
+                border:'2px dashed #ddd', borderRadius:12, padding:20,
+                minHeight:140, display:'grid', placeItems:'center'
+              }}
+            >
+              <div style={{ textAlign:'center' }}>
+                <div style={{ fontSize:16, marginBottom:6 }}>Upload et billede</div>
+                <div style={{ color:'#666', marginBottom: 10 }}>
+                  Få hurtigt preview nu. (Beskæring/AI-forbedring kommer i næste trin)
                 </div>
+                <label
+                  style={{
+                    display:'inline-block', padding:'10px 14px',
+                    border:'1px solid #111', borderRadius:8,
+                    cursor:'pointer', background:'#111', color:'#fff'
+                  }}
+                >
+                  Vælg fil
+                  <input type="file" accept="image/*" onChange={onPickLocalPhoto} style={{ display:'none' }} />
+                </label>
               </div>
-            ) : (
+            </div>
+          ) : (
+            <div
+              style={{
+                height:'100%',
+                display:'grid',
+                gridTemplateRows:'auto auto 1fr',
+                gap:8
+              }}
+            >
+              {/* Billed-preview */}
               <img
                 src={displayUrl}
                 alt="Preview"
-                style={{ width:'100%', maxHeight:220, objectFit:'cover', borderRadius:8, border:'1px solid #eee' }}
+                style={{ width:'100%', maxHeight:260, objectFit:'cover', borderRadius:8, border:'1px solid #eee' }}
               />
-            )}
 
-            {/* (2) Vælg Original/AI + knapper (ikke i scroll) */}
-            {photoPreview && (
-              <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-                <label><input type="radio" name="imgmode" checked={imageMode==='original'} onChange={()=>setImageMode('original')} /> Original</label>
-                <label><input type="radio" name="imgmode" checked={imageMode==='ai'} onChange={()=>setImageMode('ai')} disabled={!editedUrl}/> AI redigeret</label>
-                <button type="button" onClick={usePhotoInPost} style={btn}>
-                  Brug i opslag
-                </button>
+              {/* Knapper + toggles */}
+              <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'center' }}>
+                <label style={{ display:'flex', gap:6, alignItems:'center', fontSize:13 }}>
+                  <input type="radio" name="variant" checked={showVariant==='original'} onChange={()=>setShowVariant('original')} />
+                  Original
+                </label>
+                <label style={{ display:'flex', gap:6, alignItems:'center', fontSize:13 }}>
+                  <input type="radio" name="variant" checked={showVariant==='edited'} onChange={()=>setShowVariant('edited')} disabled={!editedPreview}/>
+                  AI redigeret
+                </label>
+
                 <label
                   style={{
+                    marginLeft:'auto',
                     display:'inline-block', padding:'8px 10px',
                     border:'1px solid #111', borderRadius:8,
                     cursor:'pointer', background:'#fff', color:'#111'
@@ -449,58 +440,30 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
                   Erstat billede
                   <input type="file" accept="image/*" onChange={onPickLocalPhoto} style={{ display:'none' }} />
                 </label>
-                <button type="button" onClick={resetPhoto} style={{ ...btn, background:'#fafafa', color:'#111', borderColor:'#ddd' }}>
+                <button type="button" onClick={()=>{ setPhotoPreview(''); setEditedPreview(''); setShowVariant('original'); }} style={{ ...btn, background:'#fafafa', color:'#111', borderColor:'#ddd' }}>
                   Fjern
                 </button>
+                <button type="button" onClick={usePhotoInPost} style={btn}>
+                  Brug {showVariant==='edited' && editedPreview ? 'AI-version' : 'original'} i opslag
+                </button>
+                <button type="button" onClick={applySelectedEdits} disabled={selectedPhotoIds.size===0 || !photoPreview || applying} style={btn}>
+                  {applying ? 'Anvender…' : 'Anvend valgte ændringer'}
+                </button>
+                <button type="button" onClick={resetEdits} disabled={!editedPreview} style={{ ...btn, background:'#fafafa', color:'#111', borderColor:'#ddd' }}>
+                  Nulstil
+                </button>
               </div>
-            )}
 
-            {/* (3) Forslagsliste (den eneste der scroller) */}
-            <div style={{ minHeight:0, overflow:'auto' }}>
-              {photoPreview && (
+              {/* Forslag – SCROLL herinde; PhotoSuggestions’ sticky footer forbliver synlig */}
+              <div style={{ overflow:'auto', position:'relative', minHeight:0, paddingRight:2 }}>
                 <PhotoSuggestions
                   items={photoItems}
                   selected={selectedPhotoIds}
                   onToggle={togglePhotoSuggestion}
                 />
-              )}
-            </div>
-
-            {/* (4) Bundbjælke – altid synlig */}
-            <div style={{
-              borderTop:'1px solid #eee',
-              paddingTop:8,
-              display:'grid',
-              gridTemplateColumns:'1fr auto',
-              alignItems:'center',
-              gap:8
-            }}>
-              <div>
-                <div style={{ fontSize:13, color:'#666', display:'flex', justifyContent:'space-between' }}>
-                  <span>Anvendte forslag</span>
-                  <strong>{selectedCount} / {totalPossible}</strong>
-                </div>
-                <div style={{ height:8, background:'#f2f2f5', borderRadius:6, overflow:'hidden' }}>
-                  <div style={{ width:`${progressPct}%`, height:'100%', background:'#111' }} />
-                </div>
-              </div>
-              <div style={{ display:'flex', gap:8 }}>
-                <button type="button" onClick={()=>setSelectedPhotoIds(new Set())}
-                        style={{ ...btn, background:'#fafafa', color:'#111', borderColor:'#ddd' }}>
-                  Nulstil
-                </button>
-                <button
-                  type="button"
-                  onClick={applyEdits}
-                  disabled={!photoPreview || selectedPhotoIds.size === 0}
-                  style={btn}
-                >
-                  Anvend ændringer
-                </button>
               </div>
             </div>
-            {applyMsg && <div style={{ fontSize:12, color:'#666' }}>{applyMsg}</div>}
-          </div>
+          )}
         </Card>
       </div>
 
@@ -537,9 +500,10 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
 
 /* ---------- styles ---------- */
 
-const PANEL_HEIGHT = 640; // lidt højere så der er plads til flere forslag
+const PANEL_HEIGHT = 680; // lidt højere for flere synlige forslag
+
 const scrollArea: React.CSSProperties = {
-  height: PANEL_HEIGHT - 48 /* header-estimat */,
+  height: PANEL_HEIGHT - 48 /* ca. header */,
   overflow: 'auto',
   display: 'grid',
   alignContent: 'start',
