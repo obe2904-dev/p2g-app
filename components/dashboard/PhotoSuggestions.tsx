@@ -501,7 +501,7 @@ const btn: React.CSSProperties = {
 const pillLink: React.CSSProperties = {
   display:'inline-block',
   fontSize:12,
-  border:'1px solid '#ddd',
+  border:'1px solid #ddd',
   borderRadius:999,
   padding:'4px 10px',
   background:'#fafafa',
