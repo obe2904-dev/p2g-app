@@ -16,9 +16,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method !== 'POST') return res.status(405).send('Method not allowed');
 
   try {
-    const auth = req.headers.authorization || '';
-    const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+    const auth = req.headers.authorization ?? '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';  // altid string
     const email = await getUserEmailFromToken(token);
+    if (!email) return res.status(401).send('Missing/invalid token');
     if (!email) return res.status(401).send('Missing/invalid token');
 
     const plan = await getUserPlan(email);
