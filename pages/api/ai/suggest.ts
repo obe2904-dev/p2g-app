@@ -8,63 +8,63 @@ import {
   nextResetAtISO,
 } from '@/lib/plan';
 
-// NB: Denne route må kun kaldes med Bearer-token fra Supabase sessionen.
-// Vi stubber stadig AI-output (du kan senere erstatte "suggestions" med rigtige AI-kald).
+type SuggestBody =
+  | { topic: string; tone?: string }
+  | { post_body: string; tone?: string };
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).send('Method not allowed');
 
-  // --- Parse Authorization header -> token (REN streng) ---
-  const auth = req.headers.authorization || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-  if (!token) return res.status(401).send('Missing/invalid token');
+  try {
+    const auth = req.headers.authorization || '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+    const email = await getUserEmailFromToken(token);
+    if (!email) return res.status(401).send('Missing/invalid token');
 
-  // --- Slå bruger op via token ---
-  const email = await getUserEmailFromToken(token);
-  if (!email) return res.status(401).send('Invalid token');
+    const plan = await getUserPlan(email);
 
-  // --- Plan & usage gate ---
-  const plan = await getUserPlan(email);
-  const usage = await getUsage(email, 'text_suggestions'); // "feature"-navn matcher det du bruger i LIMITS
-  const limits = LIMITS[plan];
+    // ---- Gate pr. feature ----
+    const feature = 'text_suggestions' as const;
+    const { limit, period } = LIMITS[plan][feature]; // fx { limit: 3, period: 'day'|'week' } eller { limit: 'unlimited', period: 'day' }
 
-  // Eksempler på limits:
-  // Free: 3 pr. uge, Pro: 3 pr. dag, Premium: fair use (ubrugelig begrænsning).
-  // Vi antager at LIMITS indeholder { text_suggestions_per_period: number | 'unlimited', period: 'weekly' | 'daily' | ... }
+    if (limit !== 'unlimited') {
+      const usage = await getUsage(email, feature, period);
+      if (usage.used >= limit) {
+        return res.status(429).json({
+          ok: false,
+          reason: 'limit',
+          plan,
+          feature,
+          limit,
+          period,
+          used: usage.used,
+          resetAt: nextResetAtISO(period),
+        });
+      }
+    }
 
-  // Bloker hvis nået (undtagen 'unlimited')
-  const cap = limits.text_suggestions_per_period;
-  if (cap !== 'unlimited' && usage.count >= cap) {
-    return res.status(429).json({
-      error: 'limit_reached',
+    // ---- Her ville du kalde din rigtige AI-model ----
+    const body = (req.body || {}) as SuggestBody;
+    // Minimal stub – returnér tre forslag (samme form som før)
+    const suggestions = [
+      'Idé: Ugens kage – “Saftig gulerodskage med flødeost”. Tekst: Kom forbi i eftermiddag og smag vores friskbagte gulerodskage. #caféhygge #kage #lokalt',
+      'Idé: Morgenkaffe. Tekst: Godmorgen! Vi brygger din latte, cappuccino eller filter – hvad vælger du i dag? #kaffetid #latteart',
+      'Idé: Fredagsstemning. Tekst: Weekenden er i gang – kig ind til et glas kold lemonade eller iskaffe. #fredag #sommerdrik',
+    ];
+
+    // ---- Bump usage (kun hvis vi faktisk leverer forslag) ----
+    if (limit !== 'unlimited') {
+      await bumpUsage(email, feature, period);
+    }
+
+    return res.status(200).json({
+      ok: true,
       plan,
-      used: usage.count,
-      limit: cap,
-      resetAt: nextResetAtISO(limits.period),
-      message:
-        plan === 'free'
-          ? 'Gratis-grænsen er nået. Opgrader for flere daglige forslag.'
-          : 'Grænsen for i dag er nået. Prøv igen efter reset.',
+      feature,
+      period,
+      suggestions: suggestions.slice(0, 3),
     });
+  } catch (e: any) {
+    return res.status(500).send(e.message || 'Server error');
   }
-
-  // --- (Stub) generér/returnér 3 forslag ---
-  const { topic, tone, post_body } = req.body || {};
-  // Her kan du indsætte dit rigtige AI-kald. Vi stubber med simple forslag:
-  const suggestions: string[] = post_body
-    ? [
-        `Forbedret: ${post_body} (tone: ${tone || 'neutral'})`,
-        `Variant 2 af din tekst (tone: ${tone || 'neutral'})`,
-        `Variant 3 af din tekst (tone: ${tone || 'neutral'})`,
-      ]
-    : [
-        `Idé 1 til caféopslag – ${topic || 'lokal virksomhed'} – med hashtags`,
-        `Idé 2 til caféopslag – ${topic || 'lokal virksomhed'} – med spørgsmål i slutningen`,
-        `Idé 3 til caféopslag – ${topic || 'lokal virksomhed'} – kort & skarp`,
-      ];
-
-  // --- Registrér forbrug ---
-  await bumpUsage(email, 'text_suggestions', limits.period);
-
-  return res.status(200).json({ suggestions, plan, used: usage.count + 1 });
 }
