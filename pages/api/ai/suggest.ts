@@ -1,5 +1,14 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getUserEmailFromToken, getUserPlan, LIMITS, getUsage, bumpUsage } from '@/lib/plan';
+import {
+  getUserEmailFromToken,
+  getUserPlan,
+  LIMITS,
+  getUsage,
+  bumpUsage,
+  nextResetAtISO,
+  type UsagePeriod,
+  type Plan,
+} from '@/lib/plan';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).send('Method not allowed');
@@ -12,16 +21,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!email) return res.status(401).send('Missing/invalid token');
 
     // --- Plan & usage gate ---
-    const plan = await getUserPlan(email);
-    const feature = 'text_suggestions';
+    const plan = await getUserPlan(email) as Plan;
+    const feature = 'text_suggestions' as const;
 
-    // limits[feature] is expected to be like: { limit: number|null, period: 'day'|'week'|'month' }
-    const limitsForPlan: any = LIMITS[plan] || {};
-    const { limit = null, period = 'week' } = limitsForPlan[feature] || {};
+    const rule = LIMITS[feature][plan];
+    const period: UsagePeriod = rule.period;
+    const limit = rule.max === Infinity ? null : rule.max;
 
-    // getUsage returns { used:number, period_start:string, period_end:string }
-    const usage = await getUsage(email, feature, new Date().toISOString());
-    const { used, period_end } = usage;
+    const used = await getUsage(email, feature, period);
 
     if (limit !== null && used >= limit) {
       return res.status(429).json({
@@ -32,18 +39,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         used,
         limit,
         period,
-        next_reset_at: period_end, // show user when counter resets
+        next_reset_at: nextResetAtISO(period),
       });
     }
 
-    // --- Generate (stubbed) suggestions ---
+    // --- Generate (stub) ---
     const { topic, post_body, tone } = (req.body || {}) as {
-      topic?: string;
-      post_body?: string;
-      tone?: string;
+      topic?: string; post_body?: string; tone?: string;
     };
 
-    // Simple stubbed ideas; replace with your real AI call later
     const baseIdeas = [
       'Prøv vores nye croissant – friskbagt i morges 🥐☕️',
       'Ugens kage: lemon meringue – hvad siger I? 🍋',
@@ -51,22 +55,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     ];
 
     const suggestions =
-      post_body
-        ? [
-            // “Improve” the provided text a bit (very light stub)
-            `${post_body.trim()} ${tone === 'tilbud' ? '💥' : '✨'} #café #lokalt`,
-          ]
-        : baseIdeas.map((s) =>
-            tone === 'tilbud' ? `${s} – i dag -10% til kl. 16!` : s
-          );
+      post_body && post_body.trim()
+        ? [`${post_body.trim()} ${tone === 'tilbud' ? '💥' : '✨'} #café #lokalt`]
+        : baseIdeas.map(s => tone === 'tilbud' ? `${s} – i dag -10% til kl. 16!` : s);
 
-    // Bump usage after successful generation (ignore errors)
-    try {
-      await bumpUsage(email, feature, new Date().toISOString());
-    } catch {}
+    // Tæl forbruget efter succes
+    try { await bumpUsage(email, feature, period); } catch {}
 
     return res.status(200).json({ ok: true, suggestions });
   } catch (e: any) {
-    return res.status(500).send(e.message || 'Server error');
+    return res.status(500).send(e?.message || 'Server error');
   }
 }
