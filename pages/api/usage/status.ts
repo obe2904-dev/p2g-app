@@ -3,10 +3,9 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import {
   getUserEmailFromToken,
   getUserPlan,
-  LIMITS,
   getUsage,
   nextResetAtISO,
-  type Plan,
+  LIMITS,
 } from '@/lib/plan';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -14,15 +13,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const auth = req.headers.authorization || '';
-    const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
     const email = await getUserEmailFromToken(token);
     if (!email) return res.status(401).send('Missing/invalid token');
 
-    const plan = (await getUserPlan(email)) as Plan;
+    const plan = await getUserPlan(email);
     const feature = 'text_suggestions' as const;
-    const rule = LIMITS[feature][plan];
-    const period = rule.period;
-    const limit  = rule.max; // number | Infinity
+    const cfg = LIMITS[feature][plan];
+    const period = cfg.period;
+    const limit: number | null = Number.isFinite(cfg.max) ? (cfg.max as number) : null;
 
     const used = await getUsage(email, feature, period);
 
@@ -32,8 +31,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       plan,
       period,
       used,
-      limit: Number.isFinite(limit) ? limit : null,
-      remaining: Number.isFinite(limit) ? Math.max(0, (limit as number) - used) : null,
+      limit: limit ?? null,
+      remaining: limit === null ? null : Math.max(0, (limit as number) - used),
       resetAtISO: nextResetAtISO(period),
     });
   } catch (e: any) {
