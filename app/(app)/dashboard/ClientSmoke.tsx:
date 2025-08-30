@@ -1,15 +1,21 @@
-// app/(app)/dashboard/ClientSmoke.tsx
 'use client';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 export default function ClientSmoke() {
-  const [ready, setReady] = useState(false);
-  useEffect(() => setReady(true), []);
+  const [count, setCount] = useState(0);
 
   return (
     <main style={{ padding: 16 }}>
-      <h1>Dashboard</h1>
-      <p>{ready ? 'Client ready ✅' : 'Init…'}</p>
+      <h2>Dashboard (client test)</h2>
+      <p>Hvis du kan se dette, virker client-rendering uden SSR.</p>
+
+      <button onClick={() => setCount((c) => c + 1)}>
+        Klik tæller: {count}
+      </button>
+
+      <div style={{ marginTop: 12 }}>
+        <a href="/posts">Gå til Dine opslag</a>
+      </div>
     </main>
   );
 }
