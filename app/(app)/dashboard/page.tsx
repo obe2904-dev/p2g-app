@@ -1,15 +1,17 @@
 // app/(app)/dashboard/page.tsx
-'use client';
+export const dynamic = 'force-dynamic'; // tving SSR og undgå SSG/ISR
 
-import TabAiAssistant from '@/components/dashboard/TabAiAssistant';
+import dynamic from 'next/dynamic';
 
-// tving alt til runtime (ingen ISR/SSG)
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+// Indlæs client-komponenten uden SSR, så hooks ikke kører ved build
+const TabAiAssistant = dynamic(
+  () => import('@/components/dashboard/TabAiAssistant'),
+  { ssr: false }
+);
 
 export default function DashboardPage() {
   return (
-    <main style={{ maxWidth: 1200, margin: '0 auto', padding: 12 }}>
+    <main style={{ padding: 16 }}>
       <TabAiAssistant />
     </main>
   );
