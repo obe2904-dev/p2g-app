@@ -4,61 +4,14 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-// Server-side admin klient (må KUN bruges i API routes/server)
+// Admin-klient (server-side)
 export const admin = createClient(supabaseUrl, serviceRoleKey);
 
+// Typer
 export type Plan = 'free' | 'basic' | 'pro' | 'premium';
 export type UsagePeriod = 'day' | 'week' | 'month' | 'none';
 
-// Kvoter (feature -> plan -> {period, max})
-export const LIMITS = {
-  // Bruges af knappen "Få 3 nye" (tekstforslag)
-  text_suggestions: {
-    free:    { period: 'week' as UsagePeriod,  max: 1 },        // 1 batch/uge
-    basic:   { period: 'day'  as UsagePeriod,  max: Infinity }, // ubegrænset (copy/paste-setup)
-    pro:     { period: 'day'  as UsagePeriod,  max: 1 },        // 1 batch/dag
-    premium: { period: 'none' as UsagePeriod,  max: Infinity }, // fair use
-  },
-  // Eksempel (vises i UI): billedændringer/forbedringer
-  photo_edits: {
-    free:    { period: 'week' as UsagePeriod,  max: 1 },
-    basic:   { period: 'week' as UsagePeriod,  max: 3 },
-    pro:     { period: 'day'  as UsagePeriod,  max: 10 },
-    premium: { period: 'none' as UsagePeriod,  max: Infinity },
-  },
-} as const;
-
-// Kort label
-export function planLabelShort(p: Plan) {
-  return p === 'free' ? 'Gratis'
-       : p === 'basic' ? 'Basic'
-       : p === 'pro' ? 'Pro'
-       : 'Premium';
-}
-
-// ----- Auth/plan helpers -----
-
-// Udleder e-mail fra Supabase access_token
-export async function getUserEmailFromToken(access_token: string): Promise<string | null> {
-  try {
-    if (!access_token) return null;
-    const { data, error } = await admin.auth.getUser(access_token);
-    if (error || !data?.user) return null;
-    return data.user.email ?? null;
-  } catch {
-    return null;
-  }
-}
-
-// Simpel plan-lookup (kan kobles på DB senere)
-export async function getUserPlan(user_email: string | null): Promise<Plan> {
-  if (!user_email) return 'free';
-  // TODO: slå rigtig plan op (fx i profiles)
-  return 'free';
-}
-
-// ----- Usage helpers -----
-
+// ---------- Tids-hjælpere ----------
 function startOfDay(d = new Date()) {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
@@ -67,7 +20,7 @@ function startOfDay(d = new Date()) {
 function startOfWeek(d = new Date()) {
   const x = startOfDay(d);
   const dow = x.getDay(); // 0 = søn
-  const diff = (dow + 6) % 7; // mandag som uge-start
+  const diff = (dow + 6) % 7; // mandag start
   x.setDate(x.getDate() - diff);
   return x;
 }
@@ -82,22 +35,65 @@ function addPeriod(from: Date, period: UsagePeriod) {
   return d;
 }
 
-// Returnerer brug i nuværende periode
+// ---------- Limits (pr. feature pr. plan) ----------
+export const LIMITS = {
+  text_suggestions: {
+    free:    { period: 'week'  as UsagePeriod, max: 3 },
+    basic:   { period: 'day'   as UsagePeriod, max: Infinity }, // ubegrænset (copy/paste-setup)
+    pro:     { period: 'day'   as UsagePeriod, max: 3 },
+    premium: { period: 'day'   as UsagePeriod, max: Infinity }, // “fair use”
+  },
+  photo_edits: {
+    free:    { period: 'week'  as UsagePeriod, max: 1 },
+    basic:   { period: 'week'  as UsagePeriod, max: 3 },
+    pro:     { period: 'day'   as UsagePeriod, max: 10 },
+    premium: { period: 'none'  as UsagePeriod, max: Infinity },
+  },
+} as const;
+
+export function planLabelShort(p: Plan) {
+  return p === 'free' ? 'Gratis'
+       : p === 'basic' ? 'Basic'
+       : p === 'pro' ? 'Pro'
+       : 'Premium';
+}
+
+// ---------- Auth & plan ----------
+export async function getUserEmailFromToken(access_token: string | null): Promise<string | null> {
+  try {
+    if (!access_token) return null;
+    const { data, error } = await admin.auth.getUser(access_token);
+    if (error || !data?.user) return null;
+    return data.user.email ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Midlertidig: alle er 'free', indtil vi kobler rigtig plan på profiles/tabel
+export async function getUserPlan(_user_email: string | null): Promise<Plan> {
+  return 'free';
+}
+
+// ---------- Usage (tællere) ----------
+// Returnerer et TAL (antal brugt i aktiv periode)
 export async function getUsage(
   user_email: string,
   feature: string,
   period: UsagePeriod
-): Promise<{ used: number; period_start: string; period_end: string }> {
-  const now = new Date();
-  const start =
-    period === 'day' ? startOfDay(now)
-    : period === 'week' ? startOfWeek(now)
-    : period === 'month' ? startOfMonth(now)
-    : startOfDay(new Date(0));
-  const end = addPeriod(start, period === 'none' ? 'day' : period);
-
+): Promise<number> {
   try {
-    // Tabel: usage_counters(user_email, feature, period, period_start, used)
+    if (period === 'none') return 0;
+
+    const now = new Date();
+    const start =
+      period === 'day' ? startOfDay(now)
+      : period === 'week' ? startOfWeek(now)
+      : period === 'month' ? startOfMonth(now)
+      : startOfDay(now);
+    const end = addPeriod(start, period);
+
+    // Hent alle rækker i perioden og summer "used"
     const { data, error } = await admin
       .from('usage_counters')
       .select('used, period_start')
@@ -105,35 +101,33 @@ export async function getUsage(
       .eq('feature', feature)
       .eq('period', period)
       .gte('period_start', start.toISOString())
-      .lt('period_start', end.toISOString())
-      .maybeSingle();
+      .lt('period_start', end.toISOString());
 
-    if (error || !data) {
-      return { used: 0, period_start: start.toISOString(), period_end: end.toISOString() };
-    }
-    return { used: Number(data.used || 0), period_start: start.toISOString(), period_end: end.toISOString() };
+    if (error || !data) return 0;
+    return (data as any[]).reduce((sum, r: any) => sum + Number(r.used || 0), 0);
   } catch {
-    return { used: 0, period_start: start.toISOString(), period_end: end.toISOString() };
+    // failsafe: ingen blokeringer ved fejl
+    return 0;
   }
 }
 
-// Øger usage med 1 i nuværende periode (failsafe: returnerer true selv ved DB-fejl)
 export async function bumpUsage(
   user_email: string,
   feature: string,
   period: UsagePeriod
-): Promise<boolean> {
-  if (period === 'none') return true;
-
-  const now = new Date();
-  const start =
-    period === 'day' ? startOfDay(now)
-    : period === 'week' ? startOfWeek(now)
-    : period === 'month' ? startOfMonth(now)
-    : startOfDay(now);
-  const startISO = start.toISOString();
-
+): Promise<void> {
   try {
+    if (period === 'none') return;
+
+    const now = new Date();
+    const start =
+      period === 'day' ? startOfDay(now)
+      : period === 'week' ? startOfWeek(now)
+      : period === 'month' ? startOfMonth(now)
+      : startOfDay(now);
+    const startISO = start.toISOString();
+
+    // Find eksisterende række for perioden
     const { data: existing } = await admin
       .from('usage_counters')
       .select('id, used')
@@ -144,29 +138,20 @@ export async function bumpUsage(
       .maybeSingle();
 
     if (!existing) {
-      const { error: insErr } = await admin.from('usage_counters').insert({
-        user_email,
-        feature,
-        period,
-        period_start: startISO,
-        used: 1,
+      await admin.from('usage_counters').insert({
+        user_email, feature, period, period_start: startISO, used: 1,
       });
-      if (insErr) return true;
-      return true;
     } else {
-      const { error: updErr } = await admin
+      await admin
         .from('usage_counters')
         .update({ used: Number((existing as any).used || 0) + 1 })
         .eq('id', (existing as any).id);
-      if (updErr) return true;
-      return true;
     }
   } catch {
-    return true;
+    // failsafe: ignorer
   }
 }
 
-// Hvornår nulstilles tælleren?
 export function nextResetAtISO(period: UsagePeriod): string {
   if (period === 'none') return '';
   const now = new Date();
