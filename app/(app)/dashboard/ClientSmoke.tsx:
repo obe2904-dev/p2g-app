@@ -1,12 +1,15 @@
+// app/(app)/dashboard/ClientSmoke.tsx
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export default function ClientSmoke() {
-  const [n, setN] = useState(0);
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
+
   return (
     <main style={{ padding: 16 }}>
-      <p>Client component kører ✔</p>
-      <button onClick={() => setN(n + 1)}>Klik: {n}</button>
+      <h1>Dashboard</h1>
+      <p>{ready ? 'Client ready ✅' : 'Init…'}</p>
     </main>
   );
 }
