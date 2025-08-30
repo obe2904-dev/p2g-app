@@ -29,6 +29,30 @@ const CLEANING_LIMIT = 4;          // maks 4 rengøringsforslag
 const PANEL_HEIGHT = 920;          // lidt højere, så bundlinjer er inde i kortet
 const FREE_WEEKLY_EDIT_LIMIT = 1;  // gratis-kvote pr. uge (stub)
 const USED_EDITS_THIS_WEEK = 0;    // TODO: sæt via backend, her er det en placeholder
+const [textQuota, setTextQuota] = useState<{plan_label:string; period:string; limit:number|null; used:number; remaining:number|null; resetAt:string} | null>(null);
+
+async function loadTextQuota() {
+  try {
+    const { data: s } = await supabase.auth.getSession();
+    const token = s.session?.access_token;
+    if (!token) return;
+    const r = await fetch('/api/usage/status?feature=text_three_new', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (!r.ok) return;
+    const q = await r.json();
+    setTextQuota({
+      plan_label: q.plan_label,
+      period: q.period,
+      limit: q.limit,
+      used: q.used,
+      remaining: q.remaining,
+      resetAt: q.resetAt
+    });
+  } catch {}
+}
+
+useEffect(() => { loadTextQuota(); }, []);
 
 export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => void }) {
   // -------- Platform-valg --------
@@ -122,31 +146,40 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
   useEffect(() => { setSuggestions([]); setSugErr(null); }, [platform]);
 
   async function refreshSuggestions() {
-    if (!platform) { setSugErr('Vælg først Facebook eller Instagram.'); return; }
-    setSugErr(null);
-    setLoadingSug(true);
-    try {
-      const { data: s } = await supabase.auth.getSession();
-      const token = s.session?.access_token;
-      if (!token) throw new Error('Ikke logget ind');
+  if (!platform) { setSugErr('Vælg først Facebook eller Instagram.'); return; }
+  setSugErr(null);
+  setLoadingSug(true);
+  try {
+    const { data: s } = await supabase.auth.getSession();
+    const token = s.session?.access_token;
+    if (!token) throw new Error('Ikke logget ind');
 
-      const channelHint = ` Kanaler: ${platform === 'facebook' ? 'Facebook' : 'Instagram'}`;
-      const resp = await fetch('/api/ai/suggest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({ topic: 'Idéer til opslag for en lokal virksomhed.' + channelHint, tone: 'neutral' })
-      });
+    const channelHint = ` Kanaler: ${platform === 'facebook' ? 'Facebook' : 'Instagram'}`;
+    const resp = await fetch('/api/ai/suggest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ topic: 'Idéer til opslag for en lokal virksomhed.' + channelHint, tone: 'neutral' })
+    });
 
-      if (!resp.ok) throw new Error(await resp.text());
+    if (resp.status === 429) {
       const data = await resp.json();
-      const arr = Array.isArray(data.suggestions) ? data.suggestions.slice(0, 3) : [];
-      setSuggestions(arr);
-      onAiTextUse?.();
-    } catch (e: any) {
-      setSugErr(e.message || 'Kunne ikke hente forslag');
+      setSugErr(data?.message || 'Kvote brugt.');
+      await loadTextQuota();
       setSuggestions([]);
-    } finally { setLoadingSug(false); }
-  }
+      return;
+    }
+
+    if (!resp.ok) throw new Error(await resp.text());
+    const data = await resp.json();
+    const arr = Array.isArray(data.suggestions) ? data.suggestions.slice(0, 3) : [];
+    setSuggestions(arr);
+    onAiTextUse?.();
+    await loadTextQuota();
+  } catch (e: any) {
+    setSugErr(e.message || 'Kunne ikke hente forslag');
+    setSuggestions([]);
+  } finally { setLoadingSug(false); }
+}
 
   function pickSuggestion(s: string) {
     setBody(s);
@@ -308,19 +341,30 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
       <Card
         title={platform ? `AI-forslag til ${platform === 'facebook' ? 'Facebook' : 'Instagram'}` : 'AI-forslag'}
         headerRight={
-          <button
-            onClick={refreshSuggestions}
-            disabled={loadingSug || !platform}
-            style={{
-              padding:'8px 10px', border:'1px solid #111',
-              background: !platform ? '#f2f2f2' : '#111',
-              color: !platform ? '#999' : '#fff',
-              borderRadius:8, cursor: !platform ? 'not-allowed' : 'pointer'
-            }}
-          >
-            {loadingSug ? 'Henter…' : 'Få 3 nye'}
-          </button>
+  <div style={{ display:'grid', justifyItems:'end' }}>
+    <button
+      onClick={refreshSuggestions}
+      disabled={loadingSug || !platform || (textQuota?.limit !== null && (textQuota?.remaining ?? 0) <= 0)}
+      style={{
+        padding:'8px 10px', border:'1px solid #111',
+        background: (!platform || (textQuota?.limit !== null && (textQuota?.remaining ?? 0) <= 0)) ? '#f2f2f2' : '#111',
+        color: (!platform || (textQuota?.limit !== null && (textQuota?.remaining ?? 0) <= 0)) ? '#999' : '#fff',
+        borderRadius:8, cursor: (!platform || (textQuota?.limit !== null && (textQuota?.remaining ?? 0) <= 0)) ? 'not-allowed' : 'pointer'
+      }}
+    >
+      {loadingSug ? 'Henter…' : 'Få 3 nye'}
+    </button>
+    {textQuota && (
+      <div style={{ marginTop: 6, fontSize: 12, color:'#666', textAlign:'right' }}>
+        {textQuota.limit === null
+          ? `${textQuota.plan_label}: ubegrænset`
+          : `${textQuota.plan_label}: ${Math.max(0, (textQuota.remaining ?? 0))}/${textQuota.limit} ${textQuota.period === 'weekly' ? 'denne uge' : 'i dag'}`
         }
+        {textQuota.limit !== null && <span> · <a href="/pricing">Opgrader</a></span>}
+      </div>
+    )}
+  </div>
+}
       >
         <div style={{ display:'flex', gap:12, alignItems:'stretch', flexWrap:'wrap' }}>
           <div style={{ display:'flex', gap:12, flex:'1 1 auto', minWidth:260 }}>
