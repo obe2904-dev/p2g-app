@@ -1,41 +1,41 @@
 // lib/plan.ts
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-// Server/admin-klient (bruges i API routes – ikke i client-komponenter)
-export const admin = createClient(supabaseUrl, serviceRoleKey);
-
-// ----- Typer -----
 export type Plan = 'free' | 'basic' | 'pro' | 'premium';
 export type UsagePeriod = 'day' | 'week' | 'month' | 'none';
 
-// ----- Dato-hjælpere -----
-function startOfDay(d = new Date()) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-function startOfWeek(d = new Date()) {
-  const x = startOfDay(d);
-  const dow = x.getDay();           // 0 = søndag
-  const diff = (dow + 6) % 7;       // mandag som uge-start
-  x.setDate(x.getDate() - diff);
-  return x;
-}
-function startOfMonth(d = new Date()) {
-  return new Date(d.getFullYear(), d.getMonth(), 1);
-}
-function addPeriod(from: Date, period: UsagePeriod) {
-  const d = new Date(from);
-  if (period === 'day') d.setDate(d.getDate() + 1);
-  else if (period === 'week') d.setDate(d.getDate() + 7);
-  else if (period === 'month') d.setMonth(d.getMonth() + 1);
-  return d;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+// Admin-klient (server only)
+export const admin = createClient(supabaseUrl, serviceRoleKey);
+
+// -------- Limits (hold det simpelt & konsistent) --------
+export const LIMITS = {
+  // Bruges af “Få 3 nye” tekstforslag
+  text_suggestions: {
+    free:    { period: 'week' as UsagePeriod, max: 1 },
+    basic:   { period: 'day'  as UsagePeriod, max: 3 },
+    pro:     { period: 'day'  as UsagePeriod, max: 3 },
+    premium: { period: 'none' as UsagePeriod, max: Infinity }, // fair use
+  },
+  // Kan bruges til fremtidige billedændringer
+  photo_edits: {
+    free:    { period: 'week' as UsagePeriod, max: 1 },
+    basic:   { period: 'week' as UsagePeriod, max: 3 },
+    pro:     { period: 'day'  as UsagePeriod, max: 10 },
+    premium: { period: 'none' as UsagePeriod, max: Infinity },
+  },
+} as const;
+
+export function planLabelShort(p: Plan) {
+  return p === 'free' ? 'Gratis'
+       : p === 'basic' ? 'Basic'
+       : p === 'pro' ? 'Pro'
+       : 'Premium';
 }
 
-// ----- Auth/plan -----
+// -------- Auth/plan helpers --------
 export async function getUserEmailFromToken(access_token: string): Promise<string | null> {
   try {
     const { data, error } = await admin.auth.getUser(access_token);
@@ -46,14 +46,36 @@ export async function getUserEmailFromToken(access_token: string): Promise<strin
   }
 }
 
-// Stub: alle uden eksplicit plan er 'free' (kan kobles til DB senere)
+// TODO: slå rigtig plan op i DB. Indtil da: fallback = 'free'
 export async function getUserPlan(user_email: string | null): Promise<Plan> {
   if (!user_email) return 'free';
   return 'free';
 }
 
-// ----- Usage (tællere) -----
-// Returnerer KUN tallet for brug i den aktuelle periode.
+// -------- Period helpers --------
+function startOfDay(d = new Date()) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
+function startOfWeek(d = new Date()) { const x = startOfDay(d); const dow = x.getDay(); const diff = (dow+6)%7; x.setDate(x.getDate()-diff); return x; }
+function startOfMonth(d = new Date()) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+function addPeriod(from: Date, period: UsagePeriod) {
+  const d = new Date(from);
+  if (period === 'day') d.setDate(d.getDate()+1);
+  else if (period === 'week') d.setDate(d.getDate()+7);
+  else if (period === 'month') d.setMonth(d.getMonth()+1);
+  return d;
+}
+
+export function nextResetAtISO(period: UsagePeriod): string {
+  if (period === 'none') return '';
+  const now = new Date();
+  const start =
+    period === 'day' ? startOfDay(now)
+  : period === 'week' ? startOfWeek(now)
+  : startOfMonth(now);
+  return addPeriod(start, period).toISOString();
+}
+
+// -------- Usage (failsafe: virker selv uden tabel) --------
+// Returnerer ANTAL brugt i indeværende periode
 export async function getUsage(
   user_email: string,
   feature: string,
@@ -64,13 +86,12 @@ export async function getUsage(
   const now = new Date();
   const start =
     period === 'day' ? startOfDay(now)
-    : period === 'week' ? startOfWeek(now)
-    : period === 'month' ? startOfMonth(now)
-    : startOfDay(new Date(0));
+  : period === 'week' ? startOfWeek(now)
+  : startOfMonth(now);
   const end = addPeriod(start, period);
 
   try {
-    const { data } = await admin
+    const { data, error } = await admin
       .from('usage_counters')
       .select('used, period_start')
       .eq('user_email', user_email)
@@ -80,13 +101,13 @@ export async function getUsage(
       .lt('period_start', end.toISOString())
       .maybeSingle();
 
-    return Number((data as any)?.used ?? 0);
+    if (error || !data) return 0;
+    return Number(data.used || 0);
   } catch {
-    return 0; // failsafe hvis tabel ikke findes
+    return 0;
   }
 }
 
-// Øger tæller med 1 i nuværende periode (failsafe: returnerer true uanset)
 export async function bumpUsage(
   user_email: string,
   feature: string,
@@ -97,9 +118,8 @@ export async function bumpUsage(
   const now = new Date();
   const start =
     period === 'day' ? startOfDay(now)
-    : period === 'week' ? startOfWeek(now)
-    : period === 'month' ? startOfMonth(now)
-    : startOfDay(now);
+  : period === 'week' ? startOfWeek(now)
+  : startOfMonth(now);
   const startISO = start.toISOString();
 
   try {
@@ -113,34 +133,20 @@ export async function bumpUsage(
       .maybeSingle();
 
     if (!existing) {
-      await admin.from('usage_counters').insert({
-        user_email,
-        feature,
-        period,
-        period_start: startISO,
-        used: 1,
+      const { error: insErr } = await admin.from('usage_counters').insert({
+        user_email, feature, period, period_start: startISO, used: 1
       });
+      if (insErr) return true; // failsafe
       return true;
     } else {
-      await admin
+      const { error: updErr } = await admin
         .from('usage_counters')
-        .update({ used: Number((existing as any).used ?? 0) + 1 })
+        .update({ used: Number((existing as any).used || 0) + 1 })
         .eq('id', (existing as any).id);
+      if (updErr) return true; // failsafe
       return true;
     }
   } catch {
-    return true; // failsafe
+    return true;
   }
-}
-
-// Hvornår nulstilles perioden næste gang? (ISO)
-export function nextResetAtISO(period: UsagePeriod): string {
-  if (period === 'none') return '';
-  const now = new Date();
-  const start =
-    period === 'day' ? startOfDay(now)
-    : period === 'week' ? startOfWeek(now)
-    : startOfMonth(now);
-  const next = addPeriod(start, period);
-  return next.toISOString();
 }
