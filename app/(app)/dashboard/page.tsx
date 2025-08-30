@@ -1,21 +1,8 @@
-// app/(app)/dashboard/page.tsx
-'use client';
+export const dynamic = 'force-dynamic';
 
 import dynamic from 'next/dynamic';
-
-// Indlæs AI-assistenten kun i browseren (ikke på serveren)
-const TabAiAssistant = dynamic(
-  () => import('@/components/dashboard/TabAiAssistant'),
-  {
-    ssr: false,
-    loading: () => (
-      <main style={{ padding: 16 }}>
-        <p>Loader…</p>
-      </main>
-    ),
-  }
-);
+const ClientSmoke = dynamic(() => import('./ClientSmoke'), { ssr: false, loading: () => <main style={{padding:16}}>Loader…</main> });
 
 export default function DashboardPage() {
-  return <TabAiAssistant />;
+  return <ClientSmoke />;
 }
