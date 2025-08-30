@@ -1,160 +1,186 @@
-import { createClient } from '@supabase/supabase-js';
+// lib/plan.ts
+// Ren hjælpefil til plan/kvoter + simpel usage-tracking.
+// Ingen env-keys her. Giv en Supabase *server* client ind som argument fra dine API-routes.
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const admin = createClient(supabaseUrl, serviceRoleKey);
+import type { SupabaseClient } from '@supabase/supabase-js';
 
-// Plan-limits (null = ubegrænset/fair use)
-type Limit = { period: 'daily'|'weekly'|'monthly', limit: number|null };
-type LimitsByPlan = Record<string, { text_three_new: Limit; photo_ai_edit: Limit }>;
+export type PlanTier = 'free' | 'basic' | 'pro' | 'premium';
+export type Period = 'day' | 'week' | 'month' | 'none';
+export type FeatureKey = 'ai_text_suggestions' | 'photo_edits';
 
-export const LIMITS: LimitsByPlan = {
+type Limit = { limit: number; period: Period };
+
+// “Fair use” => brug et højt tal i praksis
+const FAIR_USE = 999999;
+
+export const LIMITS: Record<PlanTier, Record<FeatureKey, Limit>> = {
   free: {
-    text_three_new: { period: 'weekly', limit: 3 },  // 3 nye pr. uge
-    photo_ai_edit: { period: 'weekly', limit: 1 },   // 1 AI-foto pr. uge
+    ai_text_suggestions: { limit: 3, period: 'week' },
+    photo_edits: { limit: 1, period: 'week' },
   },
   basic: {
-    text_three_new: { period: 'daily', limit: null }, // ubegrænset (lette tekster)
-    photo_ai_edit: { period: 'weekly', limit: 0 },    // ikke inkluderet i Basic
+    // du kan justere Basic senere; sat relativt frit til at begynde med
+    ai_text_suggestions: { limit: 20, period: 'day' },
+    photo_edits: { limit: 5, period: 'week' },
   },
   pro: {
-    text_three_new: { period: 'daily', limit: 3 },    // 3 nye pr. dag
-    photo_ai_edit: { period: 'weekly', limit: null }, // ubegrænset
+    ai_text_suggestions: { limit: 3, period: 'day' },
+    photo_edits: { limit: 5, period: 'week' },
   },
   premium: {
-    text_three_new: { period: 'daily', limit: null }, // ubegrænset (fair use)
-    photo_ai_edit: { period: 'weekly', limit: null }, // ubegrænset
+    ai_text_suggestions: { limit: FAIR_USE, period: 'day' },
+    photo_edits: { limit: 20, period: 'week' },
   },
 };
 
-export async function getUserEmailFromToken(authorizationHeader?: string|null) {
-  const auth = authorizationHeader || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!token) return null;
-  const { data, error } = await admin.auth.getUser(token);
-  if (error || !data.user?.email) return null;
-  return data.user.email!;
-}
-
-export async function getUserPlan(user_email: string): Promise<keyof LimitsByPlan> {
-  const { data, error } = await admin
-    .from('profiles_app')
-    .select('plan')
-    .eq('user_email', user_email)
-    .single();
-  if (error || !data?.plan) return 'free';
-  const p = String(data.plan).toLowerCase();
-  return (p === 'basic' || p === 'pro' || p === 'premium') ? (p as any) : 'free';
-}
-
-// DK-lokal dato (YYYY-MM-DD) for nu
-function dkLocalDateStr(d = new Date()) {
-  const s = d.toLocaleString('en-CA', { timeZone: 'Europe/Copenhagen', year: 'numeric', month: '2-digit', day: '2-digit' }); // YYYY-MM-DD
-  return s;
-}
-
-function startOfWeekDK(d = new Date()) {
-  const tz = 'Europe/Copenhagen';
-  const now = new Date(new Date(d).toLocaleString('en-US', { timeZone: tz }));
-  const day = now.getDay();                // 0=Sun, 1=Mon
-  const diffToMon = (day + 6) % 7;         // Monday as 0
-  const start = new Date(now);
-  start.setDate(now.getDate() - diffToMon);
-  return dkLocalDateStr(start);
-}
-
-export function currentPeriodStart(period: 'daily'|'weekly'|'monthly') {
-  if (period === 'daily') return dkLocalDateStr();
-  if (period === 'weekly') return startOfWeekDK();
-  // monthly
-  const tz = 'Europe/Copenhagen';
-  const now = new Date(new Date().toLocaleString('en-US', { timeZone: tz }));
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const y = start.getUTCFullYear();
-  const m = String(start.getUTCMonth()+1).padStart(2,'0');
-  const d = '01';
-  return `${y}-${m}-${d}`;
-}
-
-export function nextResetAtISO(period: 'daily'|'weekly'|'monthly') {
-  const tz = 'Europe/Copenhagen';
-  const now = new Date(new Date().toLocaleString('en-US', { timeZone: tz }));
-
-  if (period === 'daily') {
-    const next = new Date(now);
-    next.setDate(now.getDate() + 1);
-    next.setHours(0,0,0,0);
-    return new Date(next.toLocaleString('en-US',{ timeZone: tz })).toISOString();
+// Hjælp: beregn periodens start (UTC) så vi kan gruppere brug
+export function getPeriodStart(period: Period, now = new Date()): Date {
+  const d = new Date(now);
+  if (period === 'day') {
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0));
   }
-  if (period === 'weekly') {
-    const day = now.getDay();
-    const diffToMon = (day + 6) % 7;
-    const nextMon = new Date(now);
-    nextMon.setDate(now.getDate() - diffToMon + 7);
-    nextMon.setHours(0,0,0,0);
-    return new Date(nextMon.toLocaleString('en-US',{ timeZone: tz })).toISOString();
+  if (period === 'week') {
+    // Ugen starter mandag (ISO). Find mandag kl 00:00 UTC.
+    const day = d.getUTCDay(); // 0=søndag..6=lørdag
+    const iso = day === 0 ? 7 : day; // 1=mandag..7=søndag
+    const monday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0));
+    monday.setUTCDate(monday.getUTCDate() - (iso - 1));
+    return monday;
   }
-  // monthly
-  const next = new Date(now);
-  next.setUTCMonth(next.getUTCMonth()+1, 1);
-  next.setUTCHours(0,0,0,0);
-  return next.toISOString();
+  if (period === 'month') {
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 0, 0, 0));
+  }
+  // 'none'
+  return new Date(0);
 }
 
-export async function getUsage(user_email: string, feature: string, period: 'daily'|'weekly'|'monthly') {
-  const period_start = currentPeriodStart(period);
+// Hent plan for en bruger (du kan mappe fra din profil/Stripe senere)
+// Foreløbig: fallback til 'free' hvis ikke angivet
+export function getPlanTier(plan_from_profile?: string | null): PlanTier {
+  if (!plan_from_profile) return 'free';
+  const key = plan_from_profile.toLowerCase();
+  if (key === 'basic' || key === 'pro' || key === 'premium' || key === 'free') return key;
+  return 'free';
+}
+
+// Slå grænsen op
+export function getLimit(plan: PlanTier, feature: FeatureKey): Limit {
+  return LIMITS[plan][feature];
+}
+
+// --------- Usage-helpers (kræver server-side SupabaseClient) ----------
+// Forventer tabel: plan_usage (user_email text, feature text, period text, period_start timestamptz, count int, id pk)
+// Hvis du ikke har den endnu, kan vi levere SQL – men koden her kompilere/uploader fint uanset.
+
+type UsageRow = {
+  id: number;
+  user_email: string;
+  feature: string;
+  period: string;
+  period_start: string; // ISO
+  count: number;
+};
+
+export async function getUsageCount(
+  admin: SupabaseClient,
+  user_email: string,
+  feature: FeatureKey,
+  period: Period,
+  period_start: Date
+): Promise<number> {
+  const iso = period_start.toISOString();
   const { data, error } = await admin
-    .from('usage_counters')
-    .select('used')
+    .from('plan_usage')
+    .select('id,count')
     .eq('user_email', user_email)
     .eq('feature', feature)
     .eq('period', period)
-    .eq('period_start', period_start)
-    .single();
-  return error || !data ? 0 : Number(data.used || 0);
-}
+    .eq('period_start', iso);
 
-export async function bumpUsage(user_email: string, feature: string, period: 'daily'|'weekly'|'monthly') {
-  const period_start = currentPeriodStart(period);
-  // Upsert (insert on conflict)
-  const { error } = await admin
-    .from('usage_counters')
-    .upsert({ user_email, feature, period, period_start, used: 1 }, { onConflict: 'user_email,feature,period,period_start' });
   if (error) throw new Error(error.message);
-  // increment if already existed
-  const { error: incErr } = await admin.rpc('increment_usage', {
-  p_user_email: user_email,
-  p_feature: feature,
-  p_period: period,
-  p_period_start: period_start,
-});
-
-// Hvis SQL-funktionen endnu ikke er deployet (typisk kode "42883": undefined function),
-// så springer vi pænt videre. Andre fejl bobler vi op.
-if (incErr && incErr.code !== '42883') {
-  throw new Error(incErr.message);
+  const row = (data as any[] | null)?.[0] as UsageRow | undefined;
+  return row ? Number(row.count) || 0 : 0;
 }
-  // fallback safe increment via update
-  await admin
-    .from('usage_counters')
-    .update({ used: admin.rpc as any }) // ignored by supabase-js; we'll do a manual increment below
+
+export async function incrementUsage(
+  admin: SupabaseClient,
+  user_email: string,
+  feature: FeatureKey,
+  period: Period,
+  period_start: Date,
+  by = 1
+): Promise<number> {
+  const iso = period_start.toISOString();
+
+  // Slå evt. eksisterende række op
+  const { data: existingData, error: selErr } = await admin
+    .from('plan_usage')
+    .select('id,count')
     .eq('user_email', user_email)
     .eq('feature', feature)
     .eq('period', period)
-    .eq('period_start', period_start);
+    .eq('period_start', iso);
 
-  // manual atomic-ish increment
-  await admin.from('usage_counters')
-    .update({ used: (await getUsage(user_email, feature, period)) + 1 })
-    .eq('user_email', user_email)
-    .eq('feature', feature)
-    .eq('period', period)
-    .eq('period_start', period_start);
+  if (selErr) throw new Error(selErr.message);
+
+  const row = (existingData as any[] | null)?.[0] as UsageRow | undefined;
+
+  if (row) {
+    const next = (Number(row.count) || 0) + by;
+    const { error: updErr } = await admin
+      .from('plan_usage')
+      .update({ count: next })
+      .eq('id', row.id);
+    if (updErr) throw new Error(updErr.message);
+    return next;
+  } else {
+    const { error: insErr } = await admin
+      .from('plan_usage')
+      .insert({
+        user_email,
+        feature,
+        period,
+        period_start: iso,
+        count: by,
+      });
+    if (insErr) throw new Error(insErr.message);
+    return by;
+  }
 }
 
-export function planLabelShort(plan: string) {
-  if (plan === 'premium') return 'Premium';
-  if (plan === 'pro') return 'Pro';
-  if (plan === 'basic') return 'Basic';
-  return 'Gratis';
+// Kombi: tjek kvote + (valgfrit) increment
+export async function checkQuotaAndMaybeIncrement(
+  admin: SupabaseClient,
+  opts: {
+    user_email: string;
+    plan: PlanTier;
+    feature: FeatureKey;
+    increment?: boolean; // true = forbrug ét “tick”, hvis der er plads
+    now?: Date;
+  }
+): Promise<{ ok: boolean; used: number; limit: number; remaining: number; reason?: string }> {
+  const { user_email, plan, feature, increment = true, now } = opts;
+  const { limit, period } = getLimit(plan, feature);
+
+  if (period === 'none' || limit >= FAIR_USE) {
+    // Ingen reel grænse
+    if (increment) {
+      // vi kan stadig vælge at tracke – springer over for “fair use”
+    }
+    return { ok: true, used: 0, limit, remaining: limit };
+  }
+
+  const start = getPeriodStart(period, now);
+  const used = await getUsageCount(admin, user_email, feature, period, start);
+
+  if (used >= limit) {
+    return { ok: false, used, limit, remaining: 0, reason: 'quota_exceeded' };
+  }
+
+  if (increment) {
+    const after = await incrementUsage(admin, user_email, feature, period, start, 1);
+    return { ok: true, used: after, limit, remaining: Math.max(0, limit - after) };
+  } else {
+    return { ok: true, used, limit, remaining: Math.max(0, limit - used) };
+  }
 }
