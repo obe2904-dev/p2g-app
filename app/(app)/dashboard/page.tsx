@@ -1,49 +1,19 @@
-'use client';
-
 // app/(app)/dashboard/page.tsx
-// Client Component + no SSG/ISR + ErrorBoundary
 
+// 🧱 Fortæl Next at denne route ALDRIG skal prerenderes
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
-import React from 'react';
-import TabAiAssistant from '@/components/dashboard/TabAiAssistant';
+import NextDynamic from 'next/dynamic';
 
-class ErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { hasError: boolean; message: string }
-> {
-  constructor(props: { children: React.ReactNode }) {
-    super(props);
-    this.state = { hasError: false, message: '' };
-  }
-  static getDerivedStateFromError(err: any) {
-    return { hasError: true, message: err?.message || String(err) };
-  }
-  componentDidCatch(error: any, info: any) {
-    // Hjælper når vi skal fejlfinde i prod
-    // (du kan fjerne denne senere)
-    console.error('Dashboard error:', error, info);
-  }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <main style={{ maxWidth: 720, margin: '40px auto' }}>
-          <h2>Der opstod en fejl i Dashboard</h2>
-          <p style={{ color: '#b00' }}>{this.state.message}</p>
-          <p style={{ fontSize: 13, color: '#555' }}>
-            Tjek evt. browserens console for detaljer. Prøv at reloade siden.
-          </p>
-        </main>
-      );
-    }
-    return <>{this.props.children}</>;
-  }
-}
+// VIGTIGT: Denne fil er en Server Component (ingen "use client" her).
+// Vi loader client-komponenten (TabAiAssistant) uden SSR.
+const TabAiAssistant = NextDynamic(
+  () => import('@/components/dashboard/TabAiAssistant'),
+  { ssr: false, loading: () => null }
+);
 
 export default function DashboardPage() {
-  return (
-    <ErrorBoundary>
-      <TabAiAssistant />
-    </ErrorBoundary>
-  );
+  return <TabAiAssistant />;
 }
