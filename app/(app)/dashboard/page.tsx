@@ -1,12 +1,14 @@
 // app/(app)/dashboard/page.tsx
-export const dynamic = 'force-dynamic'; // undgå SSG/ISR på denne route
 
-import dynamic from 'next/dynamic';
+// Tving denne route til at være dynamisk (ingen SSG/ISR)
+export const dynamic = 'force-dynamic';
 
-// Indlæs client-komponenten uden SSR, så der ikke køres hooks ved build
-const TabAiAssistant = dynamic(
+import NextDynamic from 'next/dynamic';
+
+// Indlæs client-komponenten uden SSR, så hooks først kører i browseren
+const TabAiAssistant = NextDynamic(
   () => import('@/components/dashboard/TabAiAssistant'),
-  { ssr: false }
+  { ssr: false, loading: () => <main><p>Indlæser…</p></main> }
 );
 
 export default function DashboardPage() {
