@@ -1,19 +1,16 @@
 // app/(app)/dashboard/page.tsx
+'use client';
 
-// 🧱 Fortæl Next at denne route ALDRIG skal prerenderes
+import TabAiAssistant from '@/components/dashboard/TabAiAssistant';
+
+// tving alt til runtime (ingen ISR/SSG)
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
-export const fetchCache = 'force-no-store';
-
-import NextDynamic from 'next/dynamic';
-
-// VIGTIGT: Denne fil er en Server Component (ingen "use client" her).
-// Vi loader client-komponenten (TabAiAssistant) uden SSR.
-const TabAiAssistant = NextDynamic(
-  () => import('@/components/dashboard/TabAiAssistant'),
-  { ssr: false, loading: () => null }
-);
 
 export default function DashboardPage() {
-  return <TabAiAssistant />;
+  return (
+    <main style={{ maxWidth: 1200, margin: '0 auto', padding: 12 }}>
+      <TabAiAssistant />
+    </main>
+  );
 }
