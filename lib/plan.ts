@@ -122,10 +122,18 @@ export async function bumpUsage(user_email: string, feature: string, period: 'da
     .upsert({ user_email, feature, period, period_start, used: 1 }, { onConflict: 'user_email,feature,period,period_start' });
   if (error) throw new Error(error.message);
   // increment if already existed
-  await admin.rpc('increment_usage', { p_user_email: user_email, p_feature: feature, p_period: period, p_period_start: period_start }).catch(async () => {
-    // create the function once
-    await admin.rpc('noop'); // no-op to force connection; ignore errors
-  });
+  const { error: incErr } = await admin.rpc('increment_usage', {
+  p_user_email: user_email,
+  p_feature: feature,
+  p_period: period,
+  p_period_start: period_start,
+});
+
+// Hvis SQL-funktionen endnu ikke er deployet (typisk kode "42883": undefined function),
+// så springer vi pænt videre. Andre fejl bobler vi op.
+if (incErr && incErr.code !== '42883') {
+  throw new Error(incErr.message);
+}
   // fallback safe increment via update
   await admin
     .from('usage_counters')
