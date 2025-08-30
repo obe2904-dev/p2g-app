@@ -1,21 +1,16 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export default function ClientSmoke() {
-  const [count, setCount] = useState(0);
+  const [ok, setOk] = useState(false);
+  useEffect(() => setOk(true), []);
 
   return (
     <main style={{ padding: 16 }}>
-      <h2>Dashboard (client test)</h2>
-      <p>Hvis du kan se dette, virker client-rendering uden SSR.</p>
-
-      <button onClick={() => setCount((c) => c + 1)}>
-        Klik tæller: {count}
-      </button>
-
-      <div style={{ marginTop: 12 }}>
-        <a href="/posts">Gå til Dine opslag</a>
-      </div>
+      <h2>Dashboard</h2>
+      <p>{ok ? 'Client-rendering OK ✅' : 'Initialiserer…'}</p>
+      <p>Hvis du kan se denne tekst, kører klient-komponenten korrekt.</p>
+      <a href="/posts">Gå til “Dine opslag”</a>
     </main>
   );
 }
