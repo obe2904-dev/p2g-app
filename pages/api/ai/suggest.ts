@@ -1,3 +1,4 @@
+// pages/api/ai/suggest.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 import {
   getUserEmailFromToken,
@@ -6,7 +7,6 @@ import {
   getUsage,
   bumpUsage,
   nextResetAtISO,
-  type UsagePeriod,
   type Plan,
 } from '@/lib/plan';
 
@@ -14,23 +14,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method !== 'POST') return res.status(405).send('Method not allowed');
 
   try {
-    // --- Auth ---
+    // Auth → email
     const auth = req.headers.authorization || '';
     const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
     const email = await getUserEmailFromToken(token);
     if (!email) return res.status(401).send('Missing/invalid token');
 
-    // --- Plan & usage gate ---
-    const plan = await getUserPlan(email) as Plan;
+    // Plan & limits for feature
+    const plan = (await getUserPlan(email)) as Plan;
     const feature = 'text_suggestions' as const;
-
     const rule = LIMITS[feature][plan];
-    const period: UsagePeriod = rule.period;
-    const limit = rule.max === Infinity ? null : rule.max;
+    const period = rule.period;
+    const limit  = rule.max; // number | Infinity
 
+    // Usage gate
     const used = await getUsage(email, feature, period);
-
-    if (limit !== null && used >= limit) {
+    if (Number.isFinite(limit) && used >= (limit as number)) {
       return res.status(429).json({
         ok: false,
         reason: 'limit_reached',
@@ -43,23 +42,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    // --- Generate (stub) ---
+    // --- Stub: generér forslag (erstat senere med rigtig AI) ---
     const { topic, post_body, tone } = (req.body || {}) as {
       topic?: string; post_body?: string; tone?: string;
     };
-
     const baseIdeas = [
       'Prøv vores nye croissant – friskbagt i morges 🥐☕️',
       'Ugens kage: lemon meringue – hvad siger I? 🍋',
       'Hyggehjørne klar til eftermiddagskaffe – kig forbi!',
     ];
+    const suggestions = post_body
+      ? [`${post_body.trim()} ${tone === 'tilbud' ? '💥' : '✨'} #café #lokalt`]
+      : baseIdeas.map(s => tone === 'tilbud' ? `${s} – i dag -10% til kl. 16!` : s);
 
-    const suggestions =
-      post_body && post_body.trim()
-        ? [`${post_body.trim()} ${tone === 'tilbud' ? '💥' : '✨'} #café #lokalt`]
-        : baseIdeas.map(s => tone === 'tilbud' ? `${s} – i dag -10% til kl. 16!` : s);
-
-    // Tæl forbruget efter succes
+    // Bump usage (ignore errors)
     try { await bumpUsage(email, feature, period); } catch {}
 
     return res.status(200).json({ ok: true, suggestions });
