@@ -9,18 +9,22 @@ import {
 type Plan = 'free' | 'basic' | 'pro' | 'premium';
 type Period = 'day' | 'week' | 'month';
 
+// Samme simple regler som i suggest.ts
 function planRules(plan: Plan): { period: Period; limit: number | null } {
-  // Samme logik som i suggest.ts
   switch (plan) {
     case 'free':
+      // Gratis: 3 pr. uge
       return { period: 'week', limit: 3 };
     case 'pro':
+      // Pro: 3 pr. dag
       return { period: 'day', limit: 3 };
     case 'premium':
-      return { period: 'day', limit: null }; // ubegrænset
+      // Premium: ubegrænset (fair use)
+      return { period: 'day', limit: null };
     case 'basic':
     default:
-      return { period: 'day', limit: null }; // ubegrænset
+      // Basic: ubegrænset (manual copy/paste-setup)
+      return { period: 'day', limit: null };
   }
 }
 
@@ -28,16 +32,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method !== 'GET') return res.status(405).send('Method not allowed');
 
   try {
+    // Bearer-token -> e-mail
     const auth = req.headers.authorization || '';
     const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
     const email = await getUserEmailFromToken(token);
     if (!email) return res.status(401).send('Missing/invalid token');
 
-    const plan = await getUserPlan(email) as Plan;
+    // Plan & regler
+    const plan = (await getUserPlan(email)) as Plan;
     const { period, limit } = planRules(plan);
 
-    // Vi rapporterer status for feature "text_suggestions"
-    const used = await getUsage(email, 'text_suggestions', period);
+    // Feature: text_suggestions
+    // getUsage returnerer et tal (antal brugt i den aktuelle periode)
+    const used: number = await getUsage(email, 'text_suggestions', period);
 
     const payload = {
       ok: true,
