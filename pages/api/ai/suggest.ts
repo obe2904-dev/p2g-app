@@ -20,7 +20,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { limit = null, period = 'week' } = limitsForPlan[feature] || {};
 
     // getUsage returns { used:number, period_start:string, period_end:string }
-    const usage = await getUsage(email, feature);
+    const usage = await getUsage(email, feature, new Date().toISOString());
     const { used, period_end } = usage;
 
     if (limit !== null && used >= limit) {
@@ -62,7 +62,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Bump usage after successful generation (ignore errors)
     try {
-      await bumpUsage(email, feature);
+      await bumpUsage(email, feature, new Date().toISOString());
     } catch {}
 
     return res.status(200).json({ ok: true, suggestions });
