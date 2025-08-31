@@ -1,18 +1,9 @@
-// app/(app)/posts/[id]/edit/page.tsx
 'use client';
-
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
-type Post = {
-  id: number;
-  title: string | null;
-  body: string | null;
-  image_url: string | null;
-  status: string | null;
-};
-
+type Post = { id: number; title: string | null; body: string | null; image_url: string | null; status: string | null };
 type Analysis = {
   width:number; height:number; aspect_label:string;
   brightness:number; contrast:number; sharpness:number;
@@ -27,7 +18,6 @@ export default function EditPost({ params }: { params: { id: string } }) {
   const [saving, setSaving] = useState(false);
   const router = useRouter();
 
-  // Hent posten
   useEffect(() => {
     async function load() {
       const { data, error } = await supabase
@@ -35,7 +25,7 @@ export default function EditPost({ params }: { params: { id: string } }) {
         .select('id,title,body,image_url,status')
         .eq('id', id)
         .single();
-      if (error) setStatusMsg('Kunne ikke hente: ' + error.message);
+      if (error) setStatusMsg('Kunne ikke hente opslag: ' + error.message);
       else setPost(data as Post);
     }
     load();
@@ -50,13 +40,7 @@ export default function EditPost({ params }: { params: { id: string } }) {
     const resp = await fetch('/api/posts/update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({
-        id: post.id,
-        title: post.title,
-        body: post.body,
-        image_url: post.image_url,
-        status: post.status
-      }),
+      body: JSON.stringify({ id: post.id, title: post.title, body: post.body, image_url: post.image_url, status: post.status })
     });
     if (!resp.ok) setStatusMsg('Fejl: ' + (await resp.text())); else setStatusMsg('Gemt ✔');
     setSaving(false);
@@ -71,7 +55,7 @@ export default function EditPost({ params }: { params: { id: string } }) {
     const resp = await fetch('/api/posts/duplicate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ source_id: post.id }),
+      body: JSON.stringify({ source_id: post.id })
     });
     if (!resp.ok) { setStatusMsg('Fejl: ' + (await resp.text())); return; }
     const data = await resp.json();
@@ -88,13 +72,11 @@ export default function EditPost({ params }: { params: { id: string } }) {
     const { data: s } = await supabase.auth.getSession();
     const token = s.session?.access_token;
     if (!token) { setStatusMsg('Ikke logget ind.'); return; }
-
     const resp = await fetch('/api/posts/delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ id: post.id }),
+      body: JSON.stringify({ id: post.id })
     });
-
     if (!resp.ok) { setStatusMsg('Fejl: ' + (await resp.text())); return; }
     setStatusMsg('Slettet ✔');
     router.push('/posts');
@@ -104,19 +86,13 @@ export default function EditPost({ params }: { params: { id: string } }) {
     if (!post?.image_url) { setStatusMsg('Indsæt et billede først.'); return; }
     setStatusMsg(null); setAnalysis(null);
     try {
-      const resp = await fetch('/api/media/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image_url: post.image_url, post_id: post.id }),
-      });
+      const resp = await fetch('/api/media/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image_url: post.image_url, post_id: post.id }) });
       if (!resp.ok) setStatusMsg('Analyse-fejl: ' + (await resp.text()));
       else setAnalysis(await resp.json());
-    } catch (e:any) {
-      setStatusMsg('Analyse-fejl: ' + e.message);
-    }
+    } catch (e:any) { setStatusMsg('Analyse-fejl: ' + e.message); }
   }
 
-  if (!post) return <main><p>Henter…</p></main>;
+  if (!post) return <main><p>Henter...</p></main>;
 
   return (
     <main style={{ maxWidth: 640 }}>
@@ -150,7 +126,7 @@ export default function EditPost({ params }: { params: { id: string } }) {
         <section style={{ marginTop: 16, padding: 12, border: '1px solid #ddd', borderRadius: 8 }}>
           <h3>Foto-feedback</h3>
           <p><strong>Størrelse:</strong> {analysis.width}×{analysis.height} ({analysis.aspect_label})</p>
-          <p><strong>Lys:</strong> {analysis.brightness} — <strong>Kontrast:</strong> {analysis.contrast} — <strong>Skarphed:</strong> {analysis.sharpness}</p>
+          <p><strong>Lys (0-255):</strong> {analysis.brightness} — <strong>Kontrast:</strong> {analysis.contrast} — <strong>Skarphed:</strong> {analysis.sharpness}</p>
           <p><strong>Vurdering:</strong> {analysis.verdict}</p>
           <ul>{analysis.suggestions.map((s, i) => <li key={i}>{s}</li>)}</ul>
         </section>
