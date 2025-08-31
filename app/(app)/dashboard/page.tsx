@@ -1,10 +1,10 @@
 // app/(app)/dashboard/page.tsx
-export const dynamic = 'force-dynamic'; // undgå SSG/ISR på denne route
+export const dynamic = 'force-dynamic'; // undgå SSG/ISR
 
 import nextDynamic from 'next/dynamic';
 
-// Indlæs selve dashboardet som client-komponent
-const TabAiAssistant = nextDynamic(
+// <- BRUG DEN KOMPONENT DU ALLEREDE HAR
+const ClientDashboard = nextDynamic(
   () => import('@/components/dashboard/TabAiAssistant'),
   {
     ssr: false,
@@ -17,5 +17,5 @@ const TabAiAssistant = nextDynamic(
 );
 
 export default function DashboardPage() {
-  return <TabAiAssistant />;
+  return <ClientDashboard />;
 }
