@@ -55,6 +55,44 @@ async function loadTextQuota() {
 useEffect(() => { loadTextQuota(); }, []);
 
 export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => void }) {
+    // ---- Quota state & loader (flyttet ind i komponenten) ----
+  type TextQuota = {
+    plan_label?: string;                          // visning
+    period: 'day' | 'week' | 'month' | 'none';   // matcher lib/plan.ts UsagePeriod
+    limit: number | null;
+    used: number;
+    remaining: number | null;
+    resetAt: string;
+  };
+
+  const [textQuota, setTextQuota] = useState<TextQuota | null>(null);
+
+  async function loadTextQuota() {
+    try {
+      const { data: s } = await supabase.auth.getSession();
+      const token = s.session?.access_token;
+      if (!token) return;
+
+      const r = await fetch('/api/usage/status?feature=text_three_new', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      if (!r.ok) return;
+
+      const q = await r.json();
+      setTextQuota({
+        plan_label: q.plan_label ?? q.plan,      // tåler begge feltnavne
+        period: q.period,
+        limit: q.limit,
+        used: q.used,
+        remaining: q.remaining,
+        resetAt: q.resetAtISO ?? q.resetAt ?? ''
+      });
+    } catch {
+      // stille fallback
+    }
+  }
+
+  useEffect(() => { loadTextQuota(); }, []);
   // -------- Platform-valg --------
   const [platform, setPlatform] = useState<Platform>('');
 
