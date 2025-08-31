@@ -396,7 +396,7 @@ export default function TabAiAssistant({ onAiTextUse }: { onAiTextUse?: () => vo
       <div style={{ marginTop: 6, fontSize: 12, color:'#666', textAlign:'right' }}>
         {textQuota.limit === null
           ? `${textQuota.plan_label}: ubegrænset`
-          : `${textQuota.plan_label}: ${Math.max(0, (textQuota.remaining ?? 0))}/${textQuota.limit} ${textQuota.period === 'weekly' ? 'denne uge' : 'i dag'}`
+          : `${textQuota.plan_label}: ${Math.max(0, (textQuota.remaining ?? 0))}/${textQuota.limit} ${textQuota.period === 'week' ? 'denne uge' : textQuota.period === 'month' ? 'denne måned' : 'i dag'}`
         }
         {textQuota.limit !== null && <span> · <a href="/pricing">Opgrader</a></span>}
       </div>
