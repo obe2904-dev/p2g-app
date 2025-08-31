@@ -12,7 +12,7 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/welcome` : undefined,
+        emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback?redirect_to=/dashboard` : undefined,
       },
     });
     if (error) setStatus('Fejl: ' + error.message);
