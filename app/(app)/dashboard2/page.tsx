@@ -1,53 +1,28 @@
 // app/(app)/dashboard2/page.tsx
-export const dynamic = 'force-dynamic'; // undgå SSG/ISR så data & quotas er friske
+'use client';
 
-import NextDynamic from 'next/dynamic';
+export const dynamic = 'force-dynamic'; // undgå SSG/ISR – hold data & kvoter friske i klienten
 
-// Vi genbruger de eksisterende, “gamle” brikker:
-// - HeroRow: topkort med counts/org-info
-// - TabAiAssistant: platformvalg → 3 forslag → tekst+foto (to kolonner) → gem/kopier
-// - TabPlanning: kalenderkort (pt. placeholder i repoet)
-const HeroRow = NextDynamic(() => import('@/components/dashboard/HeroRow'), {
-  ssr: false,
-  loading: () => (
-    <main style={{ padding: 16 }}>
-      <p>Loader…</p>
-    </main>
-  ),
-});
-
-const AIAssistant = NextDynamic(
-  () => import('@/components/dashboard/TabAiAssistant'),
-  {
-    ssr: false,
-    loading: () => (
-      <main style={{ padding: 16 }}>
-        <p>Loader AI-assistent…</p>
-      </main>
-    ),
-  }
-);
-
-const Planning = NextDynamic(() => import('@/components/dashboard/TabPlanning'), {
-  ssr: false,
-  loading: () => (
-    <main style={{ padding: 16 }}>
-      <p>Loader planlægning…</p>
-    </main>
-  ),
-});
+import HeroRow from '@/components/dashboard/HeroRow';
+import TabAiAssistant from '@/components/dashboard/TabAiAssistant';
+import TabPlanning from '@/components/dashboard/TabPlanning';
+import { useCounts } from '@/components/dashboard/useCounts';
+import { useOrgSnapshot } from '@/components/dashboard/useOrgSnapshot';
 
 export default function Dashboard2Page() {
+  const { counts, loading, bumpAiTextLocal } = useCounts();
+  const org = useOrgSnapshot();
+
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       {/* Øverste række: KPI/Org snapshot */}
-      <HeroRow />
+      <HeroRow counts={counts} loading={loading} org={org} />
 
       {/* Hovedflow: platformvalg → 3 forslag → tekst+foto (to kolonner inde i komponenten) */}
-      <AIAssistant />
+      <TabAiAssistant onAiTextUse={() => bumpAiTextLocal(1)} />
 
       {/* Kalender (pt. placeholder i repoet, men UI’et er på plads) */}
-      <Planning />
+      <TabPlanning />
     </div>
   );
 }
