@@ -21,7 +21,7 @@ export default function AuthModal({
     setMsg('Sender magic link…');
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${window.location.origin}/welcome` }
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback?redirect_to=/dashboard` }
     });
     if (error) setMsg('Fejl: ' + error.message);
     else setMsg('Tjek din e-mail for loginlink.');
