@@ -11,76 +11,77 @@ type Post = {
   status: string | null;
 };
 
-type Analysis =
-  | {
-      width: number;
-      height: number;
-      aspect_label: string;
-      brightness: number;
-      contrast: number;
-      sharpness: number;
-      verdict: string;
-      suggestions: string[];
-    }
-  | null;
+type Analysis = {
+  width:number; height:number; aspect_label:string;
+  brightness:number; contrast:number; sharpness:number;
+  verdict:string; suggestions:string[];
+} | null;
 
 export default function EditPost({ params }: { params: { id: string } }) {
-  const id = Number(params.id);
   const router = useRouter();
+  const rawId = params?.id;
+  const id = Number(rawId);
+
+  // 1) Ugyldig URL → vis venlig besked
+  if (!Number.isFinite(id)) {
+    return (
+      <main>
+        <h2>Opslag ikke fundet</h2>
+        <p>URL’en skal være på formen <code>/posts/&lt;tal&gt;/edit</code> (fx <code>/posts/123/edit</code>).</p>
+        <p>Hvis du kom hertil via et link med <code>[id]</code>, så gå tilbage til “Dine opslag” og klik <em>Redigér</em> på en række.</p>
+        <p><a href="/posts">← Tilbage til Dine opslag</a></p>
+      </main>
+    );
+  }
 
   const [post, setPost] = useState<Post | null>(null);
-  const [loading, setLoading] = useState(true);        // <- vigtig: styrer "Henter..."
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<Analysis>(null);
   const [saving, setSaving] = useState(false);
 
-  // Hent posten
+  // 2) Hent posten
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      setLoading(true);
       const { data, error } = await supabase
         .from('posts_app')
         .select('id,title,body,image_url,status')
         .eq('id', id)
-        .maybeSingle(); // <- giver null hvis ikke findes
+        .single();
 
       if (cancelled) return;
       if (error) {
-        setStatusMsg('Kunne ikke hente opslag: ' + error.message);
-        setPost(null);
+        if (error.code === 'PGRST116' /* No rows */) {
+          setPost(null);
+          setStatusMsg('Opslaget findes ikke (måske er det slettet).');
+        } else {
+          setStatusMsg('Kunne ikke hente opslag: ' + error.message);
+        }
       } else {
-        setPost((data as Post) || null);
+        setPost(data as Post);
+        setStatusMsg(null);
       }
-      setLoading(false);
     }
     load();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [id]);
 
   async function save() {
     if (!post) return;
-    setSaving(true);
-    setStatusMsg('Gemmer...');
+    setSaving(true); setStatusMsg('Gemmer...');
     const { data: s } = await supabase.auth.getSession();
     const token = s.session?.access_token;
-    if (!token) {
-      setStatusMsg('Ikke logget ind.');
-      setSaving(false);
-      return;
-    }
+    if (!token) { setStatusMsg('Ikke logget ind.'); setSaving(false); return; }
     const resp = await fetch('/api/posts/update', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
       body: JSON.stringify({
         id: post.id,
         title: post.title,
         body: post.body,
         image_url: post.image_url,
-        status: post.status,
-      }),
+        status: post.status
+      })
     });
     if (!resp.ok) setStatusMsg('Fejl: ' + (await resp.text()));
     else setStatusMsg('Gemt ✔');
@@ -92,19 +93,13 @@ export default function EditPost({ params }: { params: { id: string } }) {
     setStatusMsg('Kopierer...');
     const { data: s } = await supabase.auth.getSession();
     const token = s.session?.access_token;
-    if (!token) {
-      setStatusMsg('Ikke logget ind.');
-      return;
-    }
+    if (!token) { setStatusMsg('Ikke logget ind.'); return; }
     const resp = await fetch('/api/posts/duplicate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-      body: JSON.stringify({ source_id: post.id }),
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ source_id: post.id })
     });
-    if (!resp.ok) {
-      setStatusMsg('Fejl: ' + (await resp.text()));
-      return;
-    }
+    if (!resp.ok) { setStatusMsg('Fejl: ' + (await resp.text())); return; }
     const data = await resp.json();
     setStatusMsg('Kopi oprettet ✔');
     router.push(`/posts/${data.id}/edit`);
@@ -118,97 +113,66 @@ export default function EditPost({ params }: { params: { id: string } }) {
     setStatusMsg('Sletter...');
     const { data: s } = await supabase.auth.getSession();
     const token = s.session?.access_token;
-    if (!token) {
-      setStatusMsg('Ikke logget ind.');
-      return;
-    }
+    if (!token) { setStatusMsg('Ikke logget ind.'); return; }
     const resp = await fetch('/api/posts/delete', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-      body: JSON.stringify({ id: post.id }),
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ id: post.id })
     });
-    if (!resp.ok) {
-      setStatusMsg('Fejl: ' + (await resp.text()));
-      return;
-    }
-
-    // Slettet: vis besked og gå ALDRIG i "Henter..."-limbo.
-    setStatusMsg('Slettet ✔ — sender dig tilbage…');
-
-    // 1) Prøv soft navigation
-    router.replace('/posts');
-
-    // 2) Fallback: hård redirect (sikrer navigation i alle tilfælde)
-    setTimeout(() => {
-      if (location.pathname !== '/posts') {
-        window.location.href = '/posts';
-      }
-    }, 150);
+    if (!resp.ok) { setStatusMsg('Fejl: ' + (await resp.text())); return; }
+    setStatusMsg('Slettet ✔');
+    router.replace('/posts'); // lidt mere “definitivt” end push
   }
 
   async function analyzePhoto() {
-    if (!post?.image_url) {
-      setStatusMsg('Indsæt et billede først.');
-      return;
-    }
-    setStatusMsg(null);
-    setAnalysis(null);
+    if (!post?.image_url) { setStatusMsg('Indsæt et billede først.'); return; }
+    setStatusMsg(null); setAnalysis(null);
     try {
       const resp = await fetch('/api/media/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image_url: post.image_url, post_id: post.id }),
+        body: JSON.stringify({ image_url: post.image_url, post_id: post.id })
       });
       if (!resp.ok) setStatusMsg('Analyse-fejl: ' + (await resp.text()));
       else setAnalysis(await resp.json());
-    } catch (e: any) {
-      setStatusMsg('Analyse-fejl: ' + e.message);
-    }
+    } catch (e:any) { setStatusMsg('Analyse-fejl: ' + e.message); }
   }
 
-  // ---------- RENDER ----------
-
-  // 1) Mens første hentning kører:
-  if (loading) return <main><p>Henter...</p></main>;
-
-  // 2) Hvis opslaget er væk (f.eks. efter sletning eller udløbet link):
   if (!post) {
     return (
-      <main style={{ maxWidth: 640 }}>
+      <main>
         <h2>Opslag ikke fundet</h2>
-        <p>Opslaget findes ikke (måske er det slettet).</p>
+        <p>{statusMsg || 'Opslaget findes ikke (måske er det slettet).'}</p>
         <p><a href="/posts">← Tilbage til Dine opslag</a></p>
-        {statusMsg && <p style={{ marginTop: 8 }}>{statusMsg}</p>}
       </main>
     );
   }
 
-  // 3) Normal redigering:
   return (
     <main style={{ maxWidth: 640 }}>
       <h2>Redigér opslag #{post.id}</h2>
 
       <label>Titel</label>
-      <input value={post.title ?? ''} onChange={e => setPost({ ...post, title: e.target.value })} />
+      <input value={post.title ?? ''} onChange={e=>setPost({ ...post, title: e.target.value })} />
 
       <label>Tekst</label>
-      <textarea rows={6} value={post.body ?? ''} onChange={e => setPost({ ...post, body: e.target.value })} />
+      <textarea rows={6} value={post.body ?? ''} onChange={e=>setPost({ ...post, body: e.target.value })} />
 
       <label>Billede-URL</label>
-      <input value={post.image_url ?? ''} onChange={e => setPost({ ...post, image_url: e.target.value })} />
+      <input value={post.image_url ?? ''} onChange={e=>setPost({ ...post, image_url: e.target.value })} />
 
       <label>Status</label>
-      <select value={post.status ?? 'draft'} onChange={e => setPost({ ...post, status: e.target.value })}>
+      <select value={post.status ?? 'draft'} onChange={e=>setPost({ ...post, status: e.target.value })}>
         <option value="draft">Udkast</option>
         <option value="ready">Klar</option>
         <option value="published">Publiceret (manuelt)</option>
       </select>
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+      <div style={{ display:'flex', gap:8, marginTop: 12, flexWrap:'wrap' }}>
         <button onClick={save} disabled={saving}>{saving ? 'Gemmer…' : 'Gem ændringer'}</button>
         <button onClick={duplicate}>Gem som kopi</button>
         <button onClick={analyzePhoto} disabled={!post.image_url}>Analyser billede</button>
-        <button onClick={doDelete} style={{ color: '#b00' }}>Slet opslag</button>
+        <button onClick={doDelete} style={{ color:'#b00' }}>Slet opslag</button>
         <a href="/posts">Tilbage til liste</a>
       </div>
 
@@ -218,7 +182,9 @@ export default function EditPost({ params }: { params: { id: string } }) {
           <p><strong>Størrelse:</strong> {analysis.width}×{analysis.height} ({analysis.aspect_label})</p>
           <p><strong>Lys (0-255):</strong> {analysis.brightness} — <strong>Kontrast:</strong> {analysis.contrast} — <strong>Skarphed:</strong> {analysis.sharpness}</p>
           <p><strong>Vurdering:</strong> {analysis.verdict}</p>
-          <ul>{analysis.suggestions.map((s, i) => <li key={i}>{s}</li>)}</ul>
+          <ul>
+            {analysis.suggestions.map((s, i) => <li key={i}>{s}</li>)}
+          </ul>
         </section>
       )}
 
