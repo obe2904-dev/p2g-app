@@ -16,6 +16,10 @@ type UsageState = {
   photo: { used: number; limit: number | null };
 } | null;
 
+const DRAFT_TITLE_KEY = 'p2g_draft_title';
+const DRAFT_BODY_KEY = 'p2g_draft_body';
+const DRAFT_PHOTO_KEY = 'p2g_photo_idea';
+
 export default function NewPost() {
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -34,7 +38,43 @@ export default function NewPost() {
   // AI-tællere
   const [usage, setUsage] = useState<UsageState>(null);
 
-  useEffect(() => { loadUsage(); }, []);
+  // --- Hydration from localStorage on mount ---
+  useEffect(() => {
+    // Hydrate draft title
+    const persistedTitle = typeof window !== "undefined" ? localStorage.getItem(DRAFT_TITLE_KEY) : null;
+    if (persistedTitle) setTitle(persistedTitle);
+
+    // Hydrate draft body
+    const persistedBody = typeof window !== "undefined" ? localStorage.getItem(DRAFT_BODY_KEY) : null;
+    if (persistedBody) setBody(persistedBody);
+
+    // Hydrate draft photo
+    const persistedPhoto = typeof window !== "undefined" ? localStorage.getItem(DRAFT_PHOTO_KEY) : null;
+    if (persistedPhoto) setImageUrl(persistedPhoto);
+
+    loadUsage();
+  }, []);
+
+  useEffect(() => {
+    // Persist title
+    if (title !== undefined && typeof window !== "undefined") {
+      localStorage.setItem(DRAFT_TITLE_KEY, title);
+    }
+  }, [title]);
+
+  useEffect(() => {
+    // Persist body
+    if (body !== undefined && typeof window !== "undefined") {
+      localStorage.setItem(DRAFT_BODY_KEY, body);
+    }
+  }, [body]);
+
+  useEffect(() => {
+    // Persist photo URL
+    if (imageUrl !== undefined && typeof window !== "undefined") {
+      localStorage.setItem(DRAFT_PHOTO_KEY, imageUrl);
+    }
+  }, [imageUrl]);
 
   async function loadUsage() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -206,6 +246,12 @@ export default function NewPost() {
       setStatus('Gemt!');
       setTitle(''); setBody(''); setImageUrl('');
       setAnalysis(null); setSuggestions([]);
+      // Clear persisted draft/photo
+      if (typeof window !== "undefined") {
+        localStorage.removeItem(DRAFT_TITLE_KEY);
+        localStorage.removeItem(DRAFT_BODY_KEY);
+        localStorage.removeItem(DRAFT_PHOTO_KEY);
+      }
     }
   }
 

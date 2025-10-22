@@ -1,37 +1,69 @@
 // app/(app)/layout.tsx
+'use client';
+
 import type { ReactNode } from 'react';
-import RequireAuth from '@/components/RequireAuth';
 import AppSidebar from '@/components/AppSidebar';
+import TopBar from '@/components/TopBar';
+import './styles/app.css';
+
+const SIDEBAR_W = 260;
+const HEADER_H = 64;
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="da">
-      <body style={{ fontFamily: 'system-ui, sans-serif', margin: 0, background: '#fff' }}>
-        <RequireAuth>
-          <div style={{ display: 'flex', minHeight: '100vh' }}>
-            {/* Fast venstrekolonne */}
-            <aside
-              style={{
-                width: 240,
-                borderRight: '1px solid #eee',
-                padding: '16px 12px',
-                position: 'sticky',
-                top: 0,
-                alignSelf: 'flex-start',
-                height: '100vh',
-                overflowY: 'auto'
-              }}
-            >
-              <AppSidebar />
-            </aside>
+    <div>
+      {/* FAST (fixed) sidebar med egen scroll */}
+      <aside
+        style={{
+          position: 'fixed',
+          left: 0,
+          top: 0,
+          width: SIDEBAR_W,
+          height: '100vh',
+          borderRight: '1px solid #eee',
+          background: '#fff',
+          padding: 16,
+          boxSizing: 'border-box',
+          overflowY: 'auto',
+          zIndex: 1000,
+        }}
+      >
+        <AppSidebar />
+      </aside>
 
-            {/* Hovedindhold (scroller) */}
-            <div style={{ flex: 1, padding: '16px 20px', maxWidth: 1200, margin: '0 auto' }}>
-              {children}
-            </div>
-          </div>
-        </RequireAuth>
-      </body>
-    </html>
+      {/* FAST (fixed) topbar */}
+      <header
+        style={{
+          position: 'fixed',
+          left: SIDEBAR_W,
+          right: 0,
+          top: 0,
+          height: HEADER_H,
+          borderBottom: '1px solid #eee',
+          background: '#fff',
+          display: 'flex',
+          alignItems: 'center',
+          padding: '0 16px',
+          boxSizing: 'border-box',
+          zIndex: 900,
+        }}
+      >
+        <TopBar />
+      </header>
+
+      {/* Hovedindhold – plads til sidebar + topbar */}
+      <main
+        style={{
+          marginLeft: SIDEBAR_W,
+          padding: 16,
+          paddingTop: HEADER_H + 16,
+          minHeight: '100vh',
+          boxSizing: 'border-box',
+          overflowX: 'hidden',
+        }}
+      >
+        {children}
+      </main>
+    </div>
   );
 }

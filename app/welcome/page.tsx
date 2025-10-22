@@ -76,7 +76,7 @@ export default function WelcomeWizard() {
 
           if (already) {
             // Onboarding udført – send videre til app
-            router.push('/main');
+            router.push('/');
             return;
           }
         }
@@ -150,7 +150,7 @@ export default function WelcomeWizard() {
       }
 
       // Succes → ind i appen
-      router.push('/main');
+      router.push('/');
     } catch (e:any) {
       setMsg('Fejl: ' + e.message);
     } finally {
@@ -231,7 +231,7 @@ export default function WelcomeWizard() {
 
         <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
           <button type="submit" disabled={saving}>{saving ? 'Gemmer…' : 'Færdiggør opsætning'}</button>
-          <a href="/main">Spring over</a>
+          <a href="/">Spring over</a>
         </div>
 
         {msg && <p style={{ marginTop: 8 }}>{msg}</p>}

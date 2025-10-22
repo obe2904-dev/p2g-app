@@ -1,4 +1,4 @@
-// components/AppSidebar.tsx
+ // components/AppSidebar.tsx
 'use client';
 
 import Link from 'next/link';
@@ -6,145 +6,81 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-type Profile = { full_name: string | null; plan_id: string | null };
+type Plan = 'free' | 'basic' | 'pro' | 'premium' | null;
 
-function planLabel(p?: string | null) {
-  switch ((p || '').toLowerCase()) {
-    case 'pro': return 'Pro';
-    case 'premium': return 'Premium';
-    case 'basic': return 'Basic';
-    case 'free':
-    default: return 'Gratis';
-  }
+function NavItem({
+  href,
+  label,
+  currentPath
+}: {
+  href: string;
+  label: string;
+  currentPath: string | null; // <-- accepterer null
+}) {
+  const path = currentPath ?? ''; // <-- gardér mod null
+
+  const active =
+    href === '/'
+      ? path === '/'
+      : path === href || path.startsWith(href + '/');
+
+  return (
+    <Link
+      href={href}
+      style={{
+        display: 'block',
+        padding: '10px 12px',
+        borderRadius: 8,
+        textDecoration: 'none',
+        color: active ? '#000' : '#333',
+        background: active ? '#f3f4f6' : 'transparent',
+        border: active ? '1px solid #e5e7eb' : '1px solid transparent',
+      }}
+    >
+      {label}
+    </Link>
+  );
 }
 
 export default function AppSidebar() {
-  const pathname = usePathname();
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [email, setEmail] = useState<string>('');
+  const pathname = usePathname(); // string | null
+  const [plan, setPlan] = useState<Plan>(null);
 
   useEffect(() => {
     (async () => {
-      const { data: u } = await supabase.auth.getUser();
-      setEmail(u.user?.email || '');
       const { data } = await supabase
         .from('profiles')
-        .select('full_name, plan_id')
+        .select('plan_id')
         .maybeSingle();
-      setProfile(data as Profile);
+      const p = (data?.plan_id || 'free').toLowerCase() as Plan;
+      setPlan(p);
     })();
   }, []);
 
-  const isActive = (href: string) =>
-    pathname === href || pathname?.startsWith(href + '/') ? '#f5f5f5' : 'transparent';
-
-  async function logout() {
-    await supabase.auth.signOut();
-    window.location.href = '/auth?mode=login';
-  }
-
-  const plan = (profile?.plan_id || 'free').toLowerCase();
-  const showUpgrade = plan === 'free' || plan === 'pro'; // kun Gratis og Pro
+  const showUpgrade = plan === 'free' || plan === 'pro'; // synlig i Gratis og Pro
 
   return (
-    <div style={{ display: 'grid', gridTemplateRows: 'auto 1fr auto', height: '100%' }}>
-      {/* Top: navn, e-mail, plan */}
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ fontWeight: 600 }}>Post2Grow Café</div>
-        <div style={{ fontSize: 12, color: '#555' }}>
-          {profile?.full_name || 'Bruger'}
-        </div>
-        <div style={{ fontSize: 12, color: '#777' }}>{email}</div>
-        <div
-          title={`Din nuværende plan: ${planLabel(plan)}`}
-          style={{
-            marginTop: 6,
-            fontSize: 12,
-            border: '1px solid #ddd',
-            borderRadius: 999,
-            padding: '2px 10px',
-            display: 'inline-block',
-            background: '#fafafa'
-          }}
-        >
-          Plan: <strong>{planLabel(plan)}</strong>
-        </div>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
+      {/* Logo / brand */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontWeight: 700, fontSize: 18 }}>Post2Grow</div>
+        <div style={{ fontSize: 12, color: '#666' }}></div>
       </div>
 
       {/* Navigation */}
-      <nav style={{ display: 'grid', gap: 4 }}>
-        <Link href="/" style={{
-          padding: '8px 10px',
-          borderRadius: 8,
-          background: isActive('/'),
-          textDecoration: 'none',
-          color: 'inherit'
-        }}>Dashboard</Link>
-
-        <Link href="/brand" style={{
-          padding: '8px 10px',
-          borderRadius: 8,
-          background: isActive('/brand'),
-          textDecoration: 'none',
-          color: 'inherit'
-        }}>Brandprofil</Link>
-
-        <Link href="/calendar" style={{
-          padding: '8px 10px',
-          borderRadius: 8,
-          background: isActive('/calendar'),
-          textDecoration: 'none',
-          color: 'inherit'
-        }}>Kalender</Link>
-
-        <Link href="/posts" style={{
-          padding: '8px 10px',
-          borderRadius: 8,
-          background: isActive('/posts'),
-          textDecoration: 'none',
-          color: 'inherit'
-        }}>Opslag</Link>
-
-        <Link href="/gallery" style={{
-          padding: '8px 10px',
-          borderRadius: 8,
-          background: isActive('/gallery'),
-          textDecoration: 'none',
-          color: 'inherit'
-        }}>Billeder og video</Link>
-
+      <nav style={{ display: 'grid', gap: 6 }}>
+        <NavItem href="/dashboard" label="Lav opslag" currentPath={pathname} />
+        <NavItem href="/brand" label="Virksomhedsprofil" currentPath={pathname} />
+        <NavItem href="/calendar" label="Kalender" currentPath={pathname} />
+        <NavItem href="/posts" label="Opslag" currentPath={pathname} />
+        <NavItem href="/gallery" label="Foto og video" currentPath={pathname} />
         {showUpgrade && (
-          <Link href="/pricing?from=sidebar" style={{
-            marginTop: 8,
-            padding: '10px 12px',
-            borderRadius: 8,
-            textDecoration: 'none',
-            color: 'white',
-            background: '#111',
-            textAlign: 'center',
-            fontWeight: 600
-          }}>
-            Opgradér
-          </Link>
+          <NavItem href="/pricing" label="Opgradér" currentPath={pathname} />
         )}
       </nav>
 
-      {/* Bund: log ud */}
-      <div style={{ marginTop: 12 }}>
-        <button
-          onClick={logout}
-          style={{
-            width: '100%',
-            padding: '8px 10px',
-            border: '1px solid #ddd',
-            borderRadius: 8,
-            background: 'white',
-            cursor: 'pointer'
-          }}
-        >
-          Log ud
-        </button>
-      </div>
+      <div style={{ flex: 1 }} />
+      {/* Bundsektion er tom – Log ud ligger i topbaren */}
     </div>
   );
 }
